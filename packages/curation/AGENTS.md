@@ -122,18 +122,21 @@ pnpm curate [--lang fr|en] --bank N [--work <file>] [--blind]
 pnpm curate [--lang fr|en] --finish <id> [--blind]
 #   A banked line the user chose, made ONE candidate day: read against today's archive
 #   (`bank.restore`: a line set aside, one whose words were not chosen the main word first or
-#   carry no other-sense check — no back-compat, `--rebank` takes them — a published work or
+#   carry no other-sense check (or one that does not say whether the line's sense has
+#   another: `bank.sensed`) — no back-compat, `--rebank` takes them — a published work or
 #   sentence, or a word back in its secret cooldown, is refused), then built as a run builds
 #   its chosen line (`curate.build_day`: its words checked once more on their line maps from
-#   the measures stored, the page, then gen_phrase on those same maps — `--other-sense` —
-#   with the starts it was banked with on the FIRST run: chosen on these maps, never chosen
-#   again; then `check_starts`' rounds on the written puzzle, since the archive's start
-#   blacklist may have moved and the agreed forms are known only now). No paid step: Jev is
-#   not asked, no JEV_API_KEY needed. A line found UNBUILDABLE stops with why, nothing swapped; a banked
-#   start gen_phrase refuses, or one the written map no longer holds in its band, or a fact
-#   against the trio on that map (`curate.banked_fault`, code alone: a word with two
-#   dictionary entries is the one case where the written map differs, below) stops it too,
-#   logged « rebank it ». Never publishes.
+#   the measures stored, the page, then each word with another sense has its whole plain map
+#   sorted — `curate.sort_senses`, about 100 Claude calls a word, a few minutes — and
+#   gen_phrase builds the sorted maps — `--other-sense` — with the starts it was banked with
+#   on the FIRST run, never chosen again unless the sorted map moved one: a banked start
+#   gen_phrase refuses (removed), or one out of its band on the written map, is re-picked
+#   there by the model; then `check_starts`' rounds on the written puzzle, since the
+#   archive's start blacklist may have moved and the agreed forms are known only now). No
+#   paid step: Jev is not asked, no JEV_API_KEY needed. A line found UNBUILDABLE stops with
+#   why, nothing swapped; so does a moved start whose band offers none, and a fact against
+#   the trio on the written map (`curate.banked_fault`, code alone), logged « rebank it ».
+#   Never publishes.
 pnpm curate [--lang fr|en] --rebank [--work <file>] [--blind]
 #   TAKES the bank's lines again under today's taste, in place (`curate.rebank_works`): every
 #   line with its giveaways stored never read, or read under another taste stamp, or read
@@ -216,7 +219,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   unread. A run that asks Jev (`--bank`, a normal run) dies without the key before any
   model call. Jev is asked two things and no more (`jev.py`): this sentence filter and the
   giveaway (below), the French requests byte-identical to the calibrated ones. It orders no
-  map: a hidden word's map is its plain map minus its other sense (below).
+  map: a hidden word's map is its plain map with its other sense moved (below).
 - **The model shortlists with taste, then CHOOSES THE DAY AMONG FINISHED LINES**
   (user-decided 2026-10-13: a line chosen before its checks ran was hollowed out by its
   swaps, and the rest of the shortlist was never looked at). It reads every kept line,
@@ -281,15 +284,16 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   written map, or a word no start gives a path, makes the line UNBUILDABLE
   (`curate.Unbuildable`) and it is not built; only the bank's start step chooses again in
   place of a word chosen against the main word that no start saves.
-- **Each hidden word's map is its PLAIN static map minus the words of ANOTHER SENSE than
-  the one its line uses (user-decided 2026-10-21: "the main goal is actually to eliminate
-  irrelevant meanings of a word"), ONE map from the choice of the words to the shipped
-  puzzle** (`curate.line_map`; how gen_phrase takes the words off: generation `AGENTS.md`).
-  The one exception is a word with two dictionary entries (« marche », noun or verb): the
-  curator's walk confirms no form, gen_phrase's claims the confirmed entry's other forms
-  too, and every rank after them moves by as many — so `--finish` reads the banked starts'
-  bands and the trio's facts again on the written map, in code (`curate.banked_fault`).
-  `curate.sense` asks it once per word per line, of the main word in `anchor_gate` and of
+- **Each hidden word is checked on its PLAIN static map minus the words of ANOTHER SENSE
+  than the one its line uses (user-decided 2026-10-21: "the main goal is actually to
+  eliminate irrelevant meanings of a word"), its LINE map** (`curate.line_map`; how
+  gen_phrase takes the words off: generation `AGENTS.md`); the map SHIPPED is that plain
+  map sorted whole at build (next bullet), so the written map can differ from the line map
+  — and so can a word with two dictionary entries (« marche », noun or verb): the curator's
+  walk confirms no form, gen_phrase's claims the confirmed entry's other forms too, and
+  every rank after them moves by as many. `--finish` therefore reads the trio's facts again
+  on the written map, in code (`curate.banked_fault`), and re-picks a banked start the
+  written map moved (`check_starts`). `curate.sense` asks it once per word per line, of the main word in `anchor_gate` and of
   each word chosen against it in `choose_others` (`line["senses"]`, kept in the bank): the
   model is shown the first `SENSE_TOP` (300) display words of the word's plain map, closest
   first, each group once, and names those near it ONLY through another dictionary sense — a
@@ -301,7 +305,9 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   showing a later round only words never shown — on played holes the first round's misses
   then stayed on top, « creator » for God: god 12th → 37th behind originator and guru);
   code keeps only words of the list shown. The
-  first round also says which sense the line uses, and EVERY round whether the map CARRIES
+  first round also says which sense the line uses, the word's other senses, whether the
+  line's sense has another one players could mistake for it (`other`: what decides that the
+  build sorts the word's map), and EVERY round whether the map CARRIES
   it once the words named are gone — for a figurative or euphemistic sense, the words of
   that sense, not of the literal one it comes from. The first round that says no ends the
   asking (the later rounds, shown a list already cleared, grow lenient), and a word whose
@@ -310,14 +316,34 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   (`curate.refuse`) — and so is a word whose answer is still unusable once asked again:
   never hidden unchecked. Every map the curator checks
   or picks starts on is the line map — the facts, the bands, `check_words`, the start
-  step's draft (`static_draft`) — and `generate` hands gen_phrase the words
-  (`--other-sense`, `runs/<stamp>.spoilers.other-sense.json`: keyed by the trio, a spoiler,
-  named as one, in every run); gen_phrase writes them beside the
-  puzzle (`<puzzle>.other-sense.json`, `shelf.sidecar_path`), the logged command names that
-  sidecar so it replays, and a draft erased takes its sidecar with it. The crowd and a
-  word's own keys stay on the plain map. Why: the plain order is right within one meaning
-  (« poison »: poisonous 1st, toxic 5th, toxin 6th); on 158 played holes the model named
-  other-sense neighbours on 92 and touched no one-meaning word.
+  step's draft (`static_draft`). The crowd and a word's own keys stay on the plain map. Why:
+  the plain order is right within one meaning (« poison »: poisonous 1st, toxic 5th, toxin
+  6th); on 158 played holes the model named other-sense neighbours on 92 and touched no
+  one-meaning word.
+- **At build, each hidden word with another sense has its WHOLE plain map SORTED by the
+  sense its line uses — keep, push farther, or remove (user-decided 2026-10-21: three cases
+  per word, « identified » for « recognized » is no miss)** (`curate.sort_senses`, at the
+  head of `generate`; a word whose `other` is false is not asked and ships plain).
+  `llm.sort_neighbours` shows the line, the sense it uses, the word's other senses and a
+  WINDOW of its plain map, closest first, and takes back the words that belong ENTIRELY to
+  another sense (REMOVE) and those that lean toward one but still share the line's
+  (FARTHER); every other word, noise included, is kept. The windows are plain-order
+  slices, so the same map always gives the same windows: the first `SORT_HEAD` (1000)
+  words in windows of `SORT_WINDOW` (50), each asked `SORT_VOTES` (3) times; the rest in
+  windows of `SORT_TAIL_WINDOW` (200), asked once; `SORT_WORKERS` (8) at a time, about 100
+  calls and two minutes a word. The vote (`curate.sense_votes`, a window asked once
+  weighing three): REMOVE on two remove votes, FARTHER on two farther votes or a remove
+  and a farther, else KEEP. A window still unusable once asked again builds nothing — never
+  shipped half sorted. Two independent runs agree on about 94% of a map's first 500 words
+  and no number of votes passes about 97%, so the verdicts are FROZEN rather than asked
+  again: `generate` hands gen_phrase the two lists (`--other-sense`,
+  `runs/<stamp>.spoilers.other-sense.json`: keyed by the trio, a spoiler, named as one, in
+  every run); gen_phrase writes them beside the puzzle (`<puzzle>.other-sense.json`,
+  `shelf.sidecar_path`), the logged command names that sidecar so it replays byte-for-byte,
+  and a draft erased takes its sidecar with it. A START banked on the line map that the
+  sorted map moved — removed (gen_phrase refuses it: the map is built without it) or out of
+  `START_BAND` — is re-picked on the written map by the model (`check_starts`, any round),
+  and a line whose band offers none is not built.
 - **Code MEASURES each chosen word and hands the facts to the choice and the notes to the
   start-word step** (`curate.measure`, each measure asked once per line, `Measures`; the
   facts `curate.hole_facts`, the notes `curate.context_note`): the READER — the user's own

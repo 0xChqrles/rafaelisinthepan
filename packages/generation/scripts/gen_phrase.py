@@ -69,10 +69,12 @@ identical collapse because they cannot change play. Off a TTY, #144's qualified
 keeps the fail-closed rule.
 
 A sentence map is the STATIC walk's order. The sentence chooses the secret's sense by
-subtraction only: --other-sense FICHIER (with --words) names, per secret, the words near
-it only through ANOTHER dictionary sense than the one the line uses, and their groups
-are taken off the map (build_puzzle_rank_map). The lists are written beside the puzzle
-as <puzzle>.other-sense.json, so passing that file back rebuilds the same map.
+moving words, never by reordering the rest: --other-sense FICHIER (with --words) names,
+per secret, the words near it only through ANOTHER dictionary sense than the one the
+line uses — their groups are taken off the map, a miss, with no refill — and the words
+that lean toward another sense but still share the line's — pushed to about three times
+their plain rank, never a miss (build_puzzle_rank_map). The lists are written beside the
+puzzle as <puzzle>.other-sense.json, so passing that file back rebuilds the same map.
 
 After each selected rank map is complete, generation prints a curator-only
 playability report (#135) over ranks 1..150: display-form coverage, reduced-vocab
@@ -148,6 +150,11 @@ from start_word import start_band
 # like the reduction — so K bounds how many distinct words can register as "warm".
 # Easy to change here; the front never sees K and stays K-agnostic.
 TOP_K = 10_000
+
+# A sentence's word pushed FARTHER (farther_rank): after the plain map's group at
+# max(FARTHER_FACTOR × its plain rank, 2 × it + FARTHER_MIN_STEP).
+FARTHER_FACTOR = 3
+FARTHER_MIN_STEP = 5
 
 # Curator-only playability window (#135). The report reads the nearest groups that
 # can make up a normal journey, but never filters, reorders or otherwise changes the
@@ -500,8 +507,17 @@ def lexeme_label(lex):
     return lemma if sep else lex
 
 
+def farther_rank(rank):
+    """Where a word pushed FARTHER lands, in plain ranks: three times its plain rank, and
+    at least five places past twice it, so the nearest words move too («identified» 14th
+    goes after the 42nd, a 1st after the 7th). Calibrated by a pairwise check of where
+    such words belong among their kept neighbours (a median of about 3.5 times plain);
+    ten times sank them far too deep."""
+    return max(FARTHER_FACTOR * rank, 2 * rank + FARTHER_MIN_STEP)
+
+
 def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, Vset,
-                          secret_lemmas=None, off=(), off_report=None):
+                          secret_lemmas=None, off=(), farther=(), off_report=None):
     """One secret's rank map AS SHIPPED: lexeme-ranked, keyed, dq-annotated.
 
     The one entry point both authoring paths use, so a puzzle can never be written
@@ -513,27 +529,66 @@ def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
     the whole point — the donor is the geometry source, so the dq scale is the one the
     borrowed vector describes.
 
-    `off` names words a player could type (display forms, any case) that are near the
-    secret ONLY through another dictionary sense than the one its sentence uses (the
-    curator names them, curation AGENTS.md). Each is read the way a player reaches it,
-    by its slug on a first assembly; the groups so reached are TAKEN OFF and the map is
-    assembled again without them: they claim no key and consume no rank (TOP_K still
-    counts kept groups), a surface they held attaches to the next group claiming it —
-    unless that group had no key before and is then SHOWN as an off word (the same word
-    under another lexeme, taken off in turn) — and dq is quantized over the kept groups. A word off the map reads as far to the
-    player, like one pushed to the bottom, and the kept groups keep the static order —
-    right for a one-meaning word («poison»: poisonous 1st, toxic 5th, toxin 6th), so a
-    sense is chosen by subtraction, never by reordering. A word with no key, or keying
-    the secret's own group, is IGNORED. `off_report`, when a dict, receives `removed`
-    (the displays of the groups taken off, closest first) and `ignored` (the words that
-    reached none). gen_word passes no `off`: a lone word has no sentence."""
+    A sentence picks its secret's sense by moving words of the PLAIN map, never by
+    reordering the rest: `off` names words near the secret ONLY through another
+    dictionary sense than the one its line uses, `farther` words that lean toward another
+    sense but still share part of the line's (the curator sorts them, curation
+    AGENTS.md). Each is read the way a player reaches it, by its slug on the plain
+    assembly; a word with no key there, or keying the secret's own group, is IGNORED.
+      - An `off` group is TAKEN OFF: it claims no key and consumes no rank, and its place
+        stays empty — the map walks only what the plain map walked, so it ends shorter
+        than TOP_K (no refill: every word on it was sorted). A surface it held attaches
+        to the next group claiming it, unless that group had no key before and is then
+        SHOWN as an off word (the same word under another lexeme, taken off in turn).
+      - A `farther` group goes after the plain map's group at `farther_rank` of its plain
+        rank (after the last group when that is past the end): never a miss. An `off`
+        word wins over a `farther` one naming the same group.
+      - Every other group keeps the plain order («poison»: poisonous 1st, toxic 5th).
+      - dq is quantized over the groups kept, a group pushed farther taking the
+        similarity of the group it now follows, so dq stays non-increasing.
+    `off_report`, when a dict, receives `removed` (the displays of the groups taken off),
+    `farther` (those pushed, plain order) and `ignored` (the words that reached none).
+    gen_word passes neither list: a lone word has no sentence."""
     entities = rank_lexemes(ranking, lemma_table)
     merged, rmap, groups = build_merged_rank_map(
         secret_display, ranking, lemma_table, forms_by_lemma, Vset, TOP_K,
         secret_lemmas, entities=entities)
-    ignored = [w for w in off if rmap.get(slug(w)) is None or rmap[slug(w)]["rank"] == 0]
-    wanted = {slug(w) for w in off} - {slug(w) for w in ignored}
+    named = [*off, *farther]
+    ignored = [w for w in named if rmap.get(slug(w)) is None or rmap[slug(w)]["rank"] == 0]
+    unreached = {slug(w) for w in ignored}
+    wanted = {slug(w) for w in off} - unreached
     off_lexemes, removed = set(), []
+    # The plain walk's reach: a group taken off frees no place for one it never walked.
+    index = {e[0]: i for i, e in enumerate(entities)}
+    reach = index[groups[-1][2][0]] + 1 if len(merged) >= TOP_K else len(entities)
+    # Where each farther group goes, read on the plain map: after the entity of the plain
+    # group at its farther rank (the last walked one when that is past the end).
+    hits = {rmap[s]["rank"] for s in wanted}
+    gone = {groups[r][2][0] for r in hits}
+    moves = {}
+    for s in {slug(w) for w in farther} - unreached:
+        rank = rmap[s]["rank"]
+        lex = groups[rank][2][0]
+        if lex in gone:
+            continue
+        target = farther_rank(rank)
+        after = index[groups[target][2][0]] if target < len(groups) else reach - 1
+        moves[lex] = (after, target, rank)
+    pushed = [groups[r][0] for _a, _t, r in sorted(moves.values(), key=lambda m: m[2])]
+
+    def walk():
+        """The plain walk's entities minus those taken off, the farther ones moved, each
+        similarity capped by the one before it (a moved group takes its new neighbour's)."""
+        kept = [e for e in entities[:reach] if e[0] not in off_lexemes]
+        kept.sort(key=lambda e: (moves[e[0]][0], 1, moves[e[0]][1], moves[e[0]][2])
+                  if e[0] in moves else (index[e[0]], 0, 0, 0))
+        out, prev = [], None
+        for e in kept:
+            sim = e[2] if prev is None else min(e[2], prev)
+            out.append((e[0], e[1], sim, *e[3:]))
+            prev = sim
+        return out
+
     # First the groups the off words reach; then, assembly after assembly, any group that
     # comes back SHOWN as one of them and had no key before: the same word under another
     # lexeme, which only opens once the first is gone (« idées », « variantes » came back near
@@ -541,18 +596,20 @@ def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
     # stays, at its own rank (« arracher » gaining « arraché »), and so does a surface that
     # only aliases another word's group («vers» goes to the worm).
     opened = {claims[0] for _d, rank, claims, *_ in groups if rank}
-    hits = {rmap[s]["rank"] for s in wanted}
-    while hits:
+    while hits or moves:
         for rank in sorted(hits):  # groups[rank] is that group; it claims exactly its own lexeme
             off_lexemes.add(groups[rank][2][0])
             removed.append(groups[rank][0])
         merged, rmap, groups = build_merged_rank_map(
             secret_display, ranking, lemma_table, forms_by_lemma, Vset, TOP_K,
-            secret_lemmas, entities=[e for e in entities if e[0] not in off_lexemes])
+            secret_lemmas, entities=walk())
         hits = {rank for display, rank, claims, *_ in groups[1:]
                 if claims[0] not in opened and slug(display) in wanted}
+        if not hits:
+            break
     if off_report is not None:
         off_report["removed"] = removed
+        off_report["farther"] = pushed
         off_report["ignored"] = ignored
     annotate_rank_map(rmap, merged, secret=secret_display)
     return merged, rmap, groups
@@ -1098,7 +1155,7 @@ def secret_claim(secret, donor, lemma_table, donors=None, forms=None):
 
 
 def walk_secret(secret, donor, cfg, kv, V, M, Vset, lemma_table, forms_by_lemma,
-                donors=None, forms=None, off=(), off_report=None):
+                donors=None, forms=None, off=(), farther=(), off_report=None):
     """One word's ranked neighborhood, from its identity to its shipped rank map.
 
     The per-secret pipeline, in the one order that is load-bearing: settle what
@@ -1111,8 +1168,8 @@ def walk_secret(secret, donor, cfg, kv, V, M, Vset, lemma_table, forms_by_lemma,
     `donor` is the vector source — the secret itself, or the form lending it one
     (#119); `secret` stays the true form the artifact displays and keys either way.
 
-    `off` / `off_report` are build_puzzle_rank_map's: a sentence's other-sense words,
-    whose groups are taken off the map (gen_word passes none).
+    `off` / `farther` / `off_report` are build_puzzle_rank_map's: a sentence's words of
+    another sense, taken off its map or pushed farther (gen_word passes none).
 
     Returns build_puzzle_rank_map's (merged, rank_map, groups)."""
     secret_lemmas = secret_claim(secret, donor, lemma_table, donors, forms)
@@ -1121,7 +1178,7 @@ def walk_secret(secret, donor, cfg, kv, V, M, Vset, lemma_table, forms_by_lemma,
     ranking = cfg["module"].closest(donor, kv, V, M)
     return build_puzzle_rank_map(secret, ranking, lemma_table, forms_by_lemma, Vset,
                                  secret_lemmas=secret_lemmas, off=off,
-                                 off_report=off_report)
+                                 farther=farther, off_report=off_report)
 
 
 class DonorResolver:
@@ -2781,9 +2838,10 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
     same hard error as before. `forms` (a FormResolver, #133) agrees the whole rank
     map with the sentence; without it every word keeps its dictionary form.
 
-    `other_sense` ({secret slug: [word, …]}, --other-sense) gives each hole's walk the
-    words whose groups it takes off the map (build_puzzle_rank_map); `off_reports`,
-    when a dict, receives per secret slug what its walk took off and ignored.
+    `other_sense` ({secret slug: {"remove": [word, …], "farther": [word, …]}},
+    --other-sense) gives each hole's walk the words it takes off its map and those it
+    pushes farther (build_puzzle_rank_map); `off_reports`, when a dict, receives per
+    secret slug what its walk took off, pushed and ignored.
     """
     selectors = _resolve_word_selectors(words_arg, cfg, lang)
     holes = []
@@ -2848,10 +2906,11 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         # walk_secret's fixed order — the #133 question fires inside it, ahead of the
         # walk (#134), because its answer names the lexeme group 0 claims.
         off_report = {}
+        sorted_words = (other_sense or {}).get(target_slug, {})
         merged, rank_map, groups = walk_secret(
             canonical_secret, donor, cfg, kv, V, M, Vset, lemma_table,
-            forms_by_lemma, donors, forms,
-            off=(other_sense or {}).get(target_slug, ()), off_report=off_report)
+            forms_by_lemma, donors, forms, off=sorted_words.get("remove", ()),
+            farther=sorted_words.get("farther", ()), off_report=off_report)
         if off_reports is not None:
             off_reports[target_slug] = off_report
         rank_by_display = {canonical_secret: 0}
@@ -3225,12 +3284,13 @@ def parse_args():
                    help="une phrase du texte APRÈS la phrase du jeu (répétable ; #270)")
     p.add_argument("--url", help="page du morceau pour un jour musique (#270)")
     p.add_argument("--other-sense", metavar="FICHIER",
-                   help="JSON {slug du secret: [mot, …]} : par secret, les mots proches "
-                        "de lui seulement par un AUTRE sens que celui de la phrase ; "
-                        "leurs groupes sont retirés de la carte. Exige --words, une clé "
-                        "par secret et aucune autre (liste vide : rien de retiré). "
-                        "Écrit à côté du puzzle en <puzzle>.other-sense.json, qui "
-                        "reconstruit la même carte")
+                   help="JSON {slug du secret: {\"remove\": [mot, …], \"farther\": "
+                        "[mot, …]}} : par secret, les mots proches de lui seulement par un "
+                        "AUTRE sens que celui de la phrase (retirés de la carte) et ceux "
+                        "qui penchent vers un autre sens (éloignés, jamais retirés). Exige "
+                        "--words, une clé par secret et aucune autre, chacune avec ses "
+                        "deux listes (vides : rien ne bouge). Écrit à côté du puzzle en "
+                        "<puzzle>.other-sense.json, qui reconstruit la même carte")
     p.add_argument("--out-dir", default=os.path.join(GEN_OUTPUT, "word"), dest="out_dir",
                    help="racine de sortie des puzzles ; le fichier est classé dessous "
                         "en <lang>/<type>/<auteur>/<œuvre>/ (défaut : "
@@ -3239,19 +3299,23 @@ def parse_args():
 
 
 def load_other_sense(path, secret_slugs):
-    """Read an --other-sense file: {secret slug: [word, …]}, exactly one key per
-    selected secret (an empty list takes nothing off). A missing or extra key dies here,
-    before anything loads — a list filed under the wrong slug would otherwise ship that
-    hole's map whole, silently."""
+    """Read an --other-sense file: {secret slug: {"remove": [word, …], "farther":
+    [word, …]}}, exactly one key per selected secret, each with both lists and nothing
+    else (empty lists move nothing). A missing or extra key dies here, before anything
+    loads — a list filed under the wrong slug or the wrong verdict would otherwise ship
+    that hole's map moved the wrong way, silently."""
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError) as exc:
         die(f"--other-sense : lecture de {path} impossible : {exc}")
     if not isinstance(data, dict) or not all(
-            isinstance(v, list) and all(isinstance(w, str) for w in v)
+            isinstance(v, dict) and set(v) == {"remove", "farther"}
+            and all(isinstance(ws, list) and all(isinstance(w, str) for w in ws)
+                    for ws in v.values())
             for v in data.values()):
-        die(f"--other-sense : {path} doit être un objet {{slug du secret: [mot, …]}}.")
+        die(f"--other-sense : {path} doit être un objet {{slug du secret: "
+            f"{{\"remove\": [mot, …], \"farther\": [mot, …]}}}}.")
     missing = [s for s in secret_slugs if s not in data]
     extra = sorted(set(data) - set(secret_slugs))
     if missing or extra:
@@ -3403,7 +3467,7 @@ def main():
         secret_of = {h["secret"]["slug"]: h["secret"]["word"] for h in holes}
         for secret_slug, report in off_reports.items():
             line = (f"  secret « {secret_of[secret_slug]} » : {len(report['removed'])} "
-                    f"groupe(s) d'un autre sens retiré(s)")
+                    f"groupe(s) d'un autre sens retiré(s), {len(report['farther'])} éloigné(s)")
             if report["ignored"]:
                 line += (" ; ignoré(s) (sans groupe, ou le secret lui-même) : "
                          + ", ".join(report["ignored"]))

@@ -37,9 +37,11 @@ _READ = {"about": "a dog asleep by the stove", "stands_alone": True, "why": "", 
 _GIVEN = {"old": 0.3, "dog": 0.5, "sleeps": 0.4, "stove": 0.2, "warm": 0.35}
 _LADDER = {"slot": "a state", "family": "rest", "first": "the first named"}
 # Each word's other-sense check (`curate.sense`): « old » loses two words of its other sense.
-_SENSES = {"stove": {"used": "a cooker", "carried": True, "why": "cookers stand near", "off": []},
-           "old": {"used": "aged", "carried": True, "why": "", "off": ["former", "erstwhile"]},
-           "sleeps": {"used": "rests", "carried": True, "why": "", "off": []}}
+_SENSES = {"stove": {"used": "a cooker", "others": [], "other": False, "carried": True, "why": "cookers stand near",
+                     "off": []},
+           "old": {"used": "aged", "others": ["former"], "other": True, "carried": True, "why": "",
+                   "off": ["former", "erstwhile"]},
+           "sleeps": {"used": "rests", "others": [], "other": False, "carried": True, "why": "", "off": []}}
 
 
 def _finished():
@@ -124,6 +126,10 @@ def test_finishing_refuses_a_line_set_aside_unchosen_published_or_with_a_word_ba
     assert bank.restore(unsensed, _archive(), *_RESTORE) == \
         (None, "its words have no other-sense check: `--rebank` takes it")
     assert bank.restore({**e, "senses": {"stove": _SENSES["stove"]}}, _archive(), *_RESTORE)[0] is None
+    # nor one whose check does not say whether the line's sense has another one: the build
+    # would leave a map of two senses unsorted
+    no_other = {**e, "senses": {**_SENSES, "old": {k: v for k, v in _SENSES["old"].items() if k != "other"}}}
+    assert bank.restore(no_other, _archive(), *_RESTORE)[0] is None and not bank.sensed(no_other)
 
 
 def test_the_bank_keeps_the_calendar_s_mix_and_spreads_over_authors():
@@ -309,7 +315,8 @@ def _free_maps(monkeypatch):
     carries the line's sense with nothing set aside."""
     monkeypatch.setattr(curate, "band_of", lambda line, t, sims, pairs, lang: [{"word": f"{t.slug}-start", "rank": 150}])
     monkeypatch.setattr(curate.llm, "other_sense", lambda _c, _s, word, _words, lang, off=(): {
-        "used": f"{word}, plainly", "other": False, "words": [], "carried": True, "why": ""})
+        "used": f"{word}, plainly", "senses": [f"{word}, plainly"], "other": False, "words": [], "carried": True,
+        "why": ""})
 
     def draft(line, trio, sims, lang):
         holes = [{"pos": t.i, "secret": {"word": t.text, "slug": t.slug}, "start": {"word": t.text, "slug": t.slug},
@@ -374,7 +381,8 @@ def test_a_rebank_reads_and_chooses_again_from_what_was_stored_and_never_asks_th
         e = after[key]
         assert e["trio"] == ["stove", "old", "sleeps"] and [h["role"] for h in e["holes"]] == ["main", "other", "other"]
         assert e["starts"] == {"stove": "stove-start", "old": "old-start", "sleeps": "sleeps-start"}
-        assert e["senses"]["old"] == {"used": "old, plainly", "carried": True, "why": "", "off": []}
+        assert e["senses"]["old"] == {"used": "old, plainly", "others": [], "other": False, "carried": True, "why": "",
+                                      "off": []}
         assert bank.finishable(e)
         assert e["bankedAt"] == "2026-10-18T10:00:00+00:00" and e["taste"] == STAMP
         assert not {"chain", "swaps", "levels", "dropped"} & set(e) and "out" not in e["measures"]

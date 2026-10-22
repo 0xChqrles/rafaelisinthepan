@@ -16,10 +16,11 @@ words by hand: its main word measured alone and refused by any fact against it, 
 words the model chooses AGAINST it, code measuring what a reader puts in each blank, how
 much the sentence hands a word over, what its neighbours call for, which of its nearest
 words belong to another sense than the line's, and telling back what fails — and the model
-COMPARES the finished lines and chooses the day. Each hidden word's map is its plain static
-map minus the words of that other sense (`sense`, `line_map`): ONE map, from the choice of
-the words to the puzzle `gen_phrase` writes headless (a word with two dictionary entries
-aside, whose form only gen_phrase confirms). Code hands its notes and where the
+COMPARES the finished lines and chooses the day. Each hidden word is checked on its plain
+static map minus the words of that other sense (`sense`, `line_map`); the puzzle `gen_phrase`
+writes headless ships that plain map SORTED whole by the line's sense — the words of another
+sense removed, those leaning toward one pushed farther (`sort_senses`) — and a banked start
+the sorted map moved is re-picked there. Code hands its notes and where the
 reader's words land in each hole's map to the model, which chooses the start words by the
 taste, the main word's first. Nothing is ever swapped: a line that cannot be built is not
 built. The run's log — every choice and its reason — goes to `runs/<stamp>.md`, the puzzle
@@ -75,6 +76,16 @@ COMPANION_ASKS = 3
 SENSE_TOP = 300
 SENSE_DIG = 30
 SENSE_ROUNDS = 4
+# The sort of a hidden word's whole plain map by the sense its line uses (`sort_senses`), for
+# a word with another sense, at build: the first SORT_HEAD words in windows of SORT_WINDOW,
+# each asked SORT_VOTES times, the rest in windows of SORT_TAIL_WINDOW asked once; windows
+# are plain-order slices (the same map always gives the same windows), SORT_WORKERS asked at
+# a time.
+SORT_HEAD = 1000
+SORT_WINDOW = 50
+SORT_VOTES = 3
+SORT_TAIL_WINDOW = 200
+SORT_WORKERS = 8
 # What a missing step of the narrowing ladder (`llm.LADDER`) makes of a wide word: a lottery.
 LOTTERY = {"slot": "the slot shapes no kind", "family": "no smaller family a start can name",
            "first": "it is neither the first member players name nor one the ranks climb to"}
@@ -303,31 +314,37 @@ _sidecar = shelf_mod.sidecar_path
 
 def generate(claude: llm.Claude, log: Log, line: dict, checked: "Checked", source: dict, lang: str, *,
              sims: Vectors, pairs: dict[str, set[str]], prior: dict[str, str] | None = None):
-    """The line built with its three words, each hole's map its LINE map (`line_map`: the
-    words of another sense its line was found to use handed to gen_phrase as
-    `--other-sense`, from `runs/<stamp>.spoilers.other-sense.json`): returns the written puzzle path, or
-    None with the reason logged. The forms are answered by the model as gen_phrase asks. With
-    no starts yet, the first successful run only supplies the maps: the START WORDS are then
-    chosen by the model on them (`choose_starts`, the main word's first) — or the line is
-    found UNBUILDABLE there, and the draft is erased, nothing swapped — and the puzzle is
+    """The line built with its three words, each hole's map its plain map SORTED by the sense
+    its line uses (`sort_senses`: the words of another sense removed, those leaning toward one
+    pushed farther, handed to gen_phrase as `--other-sense` from
+    `runs/<stamp>.spoilers.other-sense.json`): returns the written puzzle path, or None with
+    the reason logged. The forms are answered by the model as gen_phrase asks. With no starts
+    yet, the first successful run only supplies the maps: the START WORDS are then chosen by
+    the model on them (`choose_starts`, the main word's first) — or the line is found
+    UNBUILDABLE there, and the draft is erased, nothing swapped — and the puzzle is
     regenerated with the starts. A banked line's starts (`prior`, secret slug -> word) were
-    chosen on the line maps: they go on the FIRST run and are never chosen again; a start
-    gen_phrase refuses, or one the written map no longer holds in its band, or a fact
-    against the trio there (`banked_fault`, code alone) means it was not the map the line was
-    banked on — the line is not built.
+    chosen on the line maps: they go on the FIRST run and are never chosen again — save one
+    the sorted map moved: a start gen_phrase refuses (no word of the map now) or one out of
+    its band there is re-picked on the written map (`check_starts`), and the line is not built
+    when its band offers none. A fact against the trio on the written map (`banked_fault`, code
+    alone) means it was not the map the line was banked on — the line is not built.
     Every result is checked (the displayed sentence must be valid in its language) and a
     refused start re-picked, at most START_ROUNDS times. The command logged names the
     sidecar gen_phrase writes beside the puzzle, so it replays."""
     sentence, words = line["sentence"], [t.text for t in checked.trio]
+    if not sort_senses(claude, log, line, checked.trio, sims, lang):
+        return None
     # keyed by the hidden words: a spoiler, named as one beside the blind run's readable log
     other = _paths.RUNS_DIR / f"{log.stamp}.spoilers.other-sense.json"
     _paths.RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    other.write_text(json.dumps({t.slug: line["senses"][t.slug]["off"] for t in checked.trio},
+    other.write_text(json.dumps({t.slug: {"remove": line["senses"][t.slug]["remove"],
+                                          "farther": line["senses"][t.slug]["farther"]} for t in checked.trio},
                                 ensure_ascii=False, sort_keys=True), encoding="utf-8")
     forms: dict[str, str] = {}
     starts: dict[str, str] = {}
     tried: dict[str, set[str]] = {}  # every start a hole has shown, secret slug -> words
     cleared: dict[str, set[str]] = {}  # the starts the idea check passed, secret slug -> words
+    unchosen: set[str] = set()  # holes whose banked start the written map refused: re-picked
     chosen = bool(prior)
     if prior:
         _adopt(starts, tried, prior)
@@ -376,10 +393,18 @@ def generate(claude: llm.Claude, log: Log, line: dict, checked: "Checked", sourc
                     Path(_sidecar(path)).unlink(missing_ok=True)
                     return None
             if rounds < st.START_ROUNDS:
-                repick = check_starts(claude, log, path, line, checked, tried, sims, pairs, lang=lang,
-                                      cleared=cleared, last=rounds == st.START_ROUNDS - 1)
+                try:
+                    repick = check_starts(claude, log, path, line, checked, tried, sims, pairs, lang=lang,
+                                          cleared=cleared, last=rounds == st.START_ROUNDS - 1,
+                                          banked=prior, unchosen=unchosen)
+                except Unbuildable as raised:
+                    log(f"- on the written map, the line cannot be built: {raised}")
+                    Path(path).unlink(missing_ok=True)
+                    Path(_sidecar(path)).unlink(missing_ok=True)
+                    return None
                 if repick:
                     _adopt(starts, tried, repick)
+                    unchosen -= set(repick)
                     rounds += 1
                     continue
             # the sidecar beside the puzzle, not the run's file: the command replays the same maps
@@ -423,11 +448,16 @@ def generate(claude: llm.Claude, log: Log, line: dict, checked: "Checked", sourc
             log(f"- form of « {word} »: {feature}")
             continue
         refused = _START_REFUSED.search(err)
-        if prior and not rounds and refused:
-            # A banked start that is no key of its map: the maps moved since the line was banked.
-            log(f"- gen:phrase refused the banked start « {refused.group(1)} »: the maps moved since "
-                "the line was banked — rebank it")
-            return None
+        key = next((k for k, w in starts.items() if refused and w == refused.group(1) and prior.get(k) == w), None) \
+            if prior and not rounds else None
+        if key is not None:
+            # A banked start that is no word of the sorted map (removed for another sense): the
+            # map is built without it, and the start re-picked on the map written.
+            log(f"- gen:phrase refused the banked start « {starts[key]} »: no word of the sorted map — "
+                "re-picked on the map written")
+            del starts[key]
+            unchosen.add(key)
+            continue
         log(f"- gen:phrase refused: {err.splitlines()[0] if err else completed.stdout[-300:]}")
         return None
     log("- gen:phrase: too many form rounds")
@@ -490,21 +520,18 @@ def _unbuildable(trio: list, faults: dict) -> None:
 
 def banked_fault(path, line: dict, checked: "Checked", prior: dict[str, str], sims: Vectors,
                  pairs: dict[str, set[str]], *, lang: str) -> str | None:
-    """Why a banked line's starts (`prior`, secret slug -> word) do not stand on the puzzle
-    gen_phrase wrote, read in code alone: a start no longer in its hole's band
-    (`starts.start_candidates`; a start played since banking is `check_starts`' to trade),
-    or a fact against the trio on the written maps with the bands `choose_starts` would show
-    (`facts_of`). The starts were chosen on the curator's walk of each word (`line_map`),
-    which confirms no form: for a word with two dictionary entries (« marche », noun or
-    verb) gen_phrase claims the confirmed entry's other forms too, and every rank after them
-    moves. None when the starts stand."""
+    """Why a banked line does not stand on the puzzle gen_phrase wrote, read in code alone: a
+    fact against the trio on the written maps with the bands `choose_starts` would show
+    (`facts_of`). The line was checked on the curator's walk of each word (`line_map`), which
+    confirms no form — for a word with two dictionary entries (« marche », noun or verb)
+    gen_phrase claims the confirmed entry's other forms too, and every rank after them moves —
+    and the map shipped is sorted whole (`sort_senses`). A banked start the written map moved
+    out of its band is no fault here: `check_starts` re-picks it. None when the line stands."""
     puzzle, by_secret = _load(path)
     bands = {}
     for t in checked.trio:
         band = st.start_candidates(puzzle["ranks"][t.slug], t.slug, st.previous_token(puzzle["words"], by_secret[t.slug]),
                                    index_of=sims.index_of, lang=lang)
-        if prior.get(t.slug) not in {o["word"] for o in band}:
-            return f"the start « {prior.get(t.slug)} » for « {t.text} » is no longer in its band"
         bands[t.slug] = [o for o in band if o["word"] not in pairs.get(t.slug, ())]
     _facts, faults = facts_of(line, checked.trio, checked.paths, sims, puzzle["ranks"], bands)
     try:
@@ -585,8 +612,13 @@ def _rank_of(rank_map: dict, word: str) -> int | None:
 
 def check_starts(claude: llm.Claude, log: Log, path, line: dict, checked: "Checked", tried: dict[str, set[str]],
                  sims: Vectors, pairs: dict[str, set[str]], *, lang: str,
-                 cleared: dict[str, set[str]] | None = None, last: bool = False) -> dict[str, str]:
-    """The displayed sentence with its start words: a start this secret was already
+                 cleared: dict[str, set[str]] | None = None, last: bool = False,
+                 banked: dict[str, str] | None = None, unchosen: set[str] = frozenset()) -> dict[str, str]:
+    """The displayed sentence with its start words: first the starts the written map MOVED —
+    a `banked` start (secret slug -> word) whose rank there left the band (START_BAND), or one
+    gen_phrase refused (`unchosen`, the hole then carrying gen_phrase's own pick) — re-picked
+    on that map, every round, the last included; Unbuildable when its band offers no start the
+    model takes. Then a start this secret was already
     played with (`pairs`), then the model reading the sentence (`llm.sentence_check`:
     correct, and still meaning something), then — once it reads right — the FIRST idea in the
     sentence of the main word's start and of the start of each word of a wide kind
@@ -605,9 +637,19 @@ def check_starts(claude: llm.Claude, log: Log, path, line: dict, checked: "Check
     of = {t.slug: t for t in checked.trio}
     notes = {k: _notes(puzzle["ranks"][k], of[k], line, checked, sims) for k in by_secret}
     faulty: dict[str, str] = {}
+    moved: set[str] = set()  # the starts the written map moved: re-picked whatever the round
+    lo, hi = st.START_BAND
     for key, h in by_secret.items():
-        if h["start"]["word"] in pairs.get(key, ()):
-            faulty[key] = "this secret was already played from this start word"
+        if key in unchosen:
+            faulty[key] = "its banked start is no word of the sorted map"
+        elif (banked or {}).get(key) == h["start"]["word"] and not lo <= (
+                rank := _rank_of(puzzle["ranks"][key], h["start"]["word"]) or 0) <= hi:
+            faulty[key] = f"its banked start stands at rank {rank} on the written map, out of its band"
+        else:
+            if h["start"]["word"] in pairs.get(key, ()):
+                faulty[key] = "this secret was already played from this start word"
+            continue
+        moved.add(key)
     if not faulty:
         verdict = llm.sentence_check(claude, shown, [h["start"]["word"] for h in by_secret.values()], lang=lang)
         if verdict["valid"]:
@@ -663,6 +705,8 @@ def check_starts(claude: llm.Claude, log: Log, path, line: dict, checked: "Check
                                       exclude={h["start"]["word"], *tried.get(key, ()), *pairs.get(key, ())},
                                       index_of=sims.index_of, lang=lang)
         if not options:
+            if key in moved:
+                raise Unbuildable(f"no start left in the band of « {h['secret']['word']} »")
             log(f"- no other start in the band for « {h['secret']['word']} » — left to the reviewer")
             continue
         # the day as it now stands: a hole re-picked earlier in this round shows its new start
@@ -674,6 +718,8 @@ def check_starts(claude: llm.Claude, log: Log, path, line: dict, checked: "Check
                                          "start": repick.get(k, o["start"]["word"]), "notes": notes[k]}
                                         for k, o in by_secret.items() if k != key])
         if choice is None:
+            if key in moved:
+                raise Unbuildable(f"the model finds no start in the band of « {h['secret']['word']} »")
             log(f"- the model finds no valid start for « {h['secret']['word']} » — left to the reviewer")
             continue
         repick[key] = choice
@@ -1229,10 +1275,12 @@ def sense(claude: llm.Claude, log, line: dict, t, sims: Vectors, lang: str) -> d
     played holes they passed « partir » for dying "though mourir and décéder are absent"). The
     words named leave the word's map (`line_map`): a word off the map reads as far to a player,
     and the line's own sense keeps the plain order (on 158 played holes, the words named
-    touched no one-meaning word). Returns {"used", "carried", "why", "off": [the words named,
-    in order]}; None when an answer is still unusable once asked again — no verdict, and the
-    word is never hidden unchecked. A word with no plain map is not asked: nothing to take
-    off, and its facts refuse it (no start in its band)."""
+    touched no one-meaning word). Returns {"used", "others" (its other senses), "other" (whether
+    the line's sense has another one players could mistake for it), "carried", "why", "off":
+    [the words named, in order]}; None when an answer is still unusable once asked again — no
+    verdict, and the word is never hidden unchecked. A word with no plain map is not asked:
+    nothing to take off, and its facts refuse it (no start in its band). These words shape the
+    checks and the start choice; the map shipped is sorted whole at build (`sort_senses`)."""
     senses = line.setdefault("senses", {})
     if t.slug in senses:
         return senses[t.slug]
@@ -1240,7 +1288,7 @@ def sense(claude: llm.Claude, log, line: dict, t, sims: Vectors, lang: str) -> d
     order = [] if rank_map is None else list(dict.fromkeys(
         e["word"] for e in sorted((e for e in rank_map.values() if e["rank"] >= 1), key=lambda e: e["rank"])))
     if not order:
-        return {"used": "", "carried": True, "why": "", "off": []}
+        return {"used": "", "others": [], "other": False, "carried": True, "why": "", "off": []}
     off: list[str] = []
     first = verdict = None
     for n in range(SENSE_ROUNDS):
@@ -1257,7 +1305,8 @@ def sense(claude: llm.Claude, log, line: dict, t, sims: Vectors, lang: str) -> d
         off += answer["words"]
         if (n == 0 and not answer["other"]) or not answer["carried"] or len(answer["words"]) < SENSE_DIG:
             break
-    senses[t.slug] = {"used": first["used"], "carried": verdict["carried"], "why": verdict["why"], "off": off}
+    senses[t.slug] = {"used": first["used"], "others": [s for s in first["senses"] if s != first["used"]],
+                      "other": first["other"], "carried": verdict["carried"], "why": verdict["why"], "off": off}
     log(f"- other sense of « {t.text} »: the line uses it as {first['used']}; "
         + (f"{len(off)} word(s) of another sense set aside ({', '.join(off[:5])}{', …' if len(off) > 5 else ''})"
            if off else "no word of another sense set aside")
@@ -1277,14 +1326,85 @@ def _uncarried(claude: llm.Claude, log, line: dict, t, sims: Vectors, lang: str)
     return None
 
 
+def sense_votes(answers: list[tuple[int, dict]]) -> dict[str, str]:
+    """Each word's verdict from the windows that showed it: `answers` is (weight, {"remove",
+    "farther"}) per window, a window asked SORT_VOTES times weighing 1 per answer, a window asked
+    once weighing SORT_VOTES. REMOVE takes two remove votes; FARTHER two farther votes, or a
+    remove and a farther; any other word is kept (not returned). Two runs of the same windows
+    agree on about 94% of a map's first 500 words: the verdicts are kept (the sidecar beside
+    the puzzle), never asked again for a republish."""
+    votes: dict[str, list[int]] = {}
+    for weight, answer in answers:
+        for group, i in (("remove", 0), ("farther", 1)):
+            for w in answer[group]:
+                votes.setdefault(w, [0, 0])[i] += weight
+    return {w: "remove" if r >= 2 else "farther" for w, (r, f) in votes.items() if r >= 2 or f >= 2 or r + f >= 2}
+
+
+def sort_senses(claude: llm.Claude, log, line: dict, trio: list, sims: Vectors, lang: str) -> bool:
+    """Each hidden word's WHOLE plain map sorted by the sense its line uses (user-decided
+    2026-10-21: keep, push farther, or remove), for the map shipped: `line["senses"][slug]`
+    gains "remove" and "farther", the words of its plain map in plain order (`llm.sort_neighbours`,
+    windows and votes above; `sense_votes`). A word whose line's sense has no other one players
+    could mistake for it (`sense`'s "other") is not asked: its map stays plain. gen_phrase takes
+    the removed words off its map and pushes the others to about three times their plain rank
+    (`--other-sense`). False when a window has no usable answer once asked again: the line is
+    not built, never shipped half sorted."""
+    jobs = []
+    for t in trio:
+        verdict = line["senses"][t.slug]
+        if "remove" in verdict:
+            continue
+        if not verdict.get("other"):
+            verdict["remove"], verdict["farther"] = [], []
+            continue
+        rank_map = sims.static_map(t)
+        order = [] if rank_map is None else list(dict.fromkeys(
+            e["word"] for e in sorted((e for e in rank_map.values() if e["rank"] >= 1), key=lambda e: e["rank"])))
+        head = min(SORT_HEAD, len(order))
+        jobs += [(t, 1, start, order[start:start + SORT_WINDOW])
+                 for _vote in range(SORT_VOTES) for start in range(0, head, SORT_WINDOW)]
+        jobs += [(t, SORT_VOTES, start, order[start:start + SORT_TAIL_WINDOW])
+                 for start in range(head, len(order), SORT_TAIL_WINDOW)]
+    if not jobs:
+        return True
+
+    def ask(job):
+        t, _weight, start, words = job
+        verdict = line["senses"][t.slug]
+        once = lambda: llm.sort_neighbours(claude, line["sentence"], t.text, verdict["used"], verdict["others"],
+                                           start, words, lang=lang)
+        return once() or once()  # an unusable answer is asked once more
+
+    with llm.subscription_only(), ThreadPoolExecutor(SORT_WORKERS) as pool:
+        answers = list(pool.map(ask, jobs))
+    for t in dict.fromkeys(job[0] for job in jobs):
+        mine = [(job[1], a) for job, a in zip(jobs, answers) if job[0] is t]
+        if any(a is None for _w, a in mine):
+            log(f"- sorting the map of « {t.text} »: a window had no usable answer, asked twice — the line is not built")
+            return False
+        verdicts = sense_votes(mine)
+        order = list(dict.fromkeys(w for _w, a in mine for w in (*a["remove"], *a["farther"])))
+        rank_map = sims.static_map(t)
+        plain = {e["word"]: e["rank"] for e in rank_map.values()} if rank_map else {}
+        order.sort(key=lambda w: plain.get(w, 0))
+        verdict = line["senses"][t.slug]
+        verdict["remove"] = [w for w in order if verdicts.get(w) == "remove"]
+        verdict["farther"] = [w for w in order if verdicts.get(w) == "farther"]
+        log(f"- the map of « {t.text} » sorted by the sense the line uses ({verdict['used']}): "
+            f"{len(verdict['remove'])} word(s) removed, {len(verdict['farther'])} pushed farther "
+            f"({len(mine)} window(s) asked)")
+    return True
+
+
 def line_map(line: dict, t, sims: Vectors) -> dict | None:
-    """The map a hidden word is checked on, given its starts on and written with: its static
-    map with the words of another sense its line was found to use taken off (`sense`), the
-    map gen_phrase writes (`--other-sense`) — ONE map from the choice to the shipped puzzle,
-    save for a word with two dictionary entries (« marche », noun or verb): this walk confirms
-    no form, gen_phrase's claims the confirmed entry's other forms too, and the ranks after
-    them move (`banked_fault` reads a banked line's starts again on the written map). The
-    plain map for a word not asked yet (a word offered, not chosen). None without a map."""
+    """The map a hidden word is checked on and given its starts on: its static map with the
+    words of another sense its line was found to use taken off (`sense`). The map shipped is
+    the plain map sorted whole at build (`sort_senses`), and for a word with two dictionary
+    entries (« marche », noun or verb) gen_phrase's walk claims the confirmed entry's other
+    forms too: the written map can differ, so `banked_fault` reads the trio's facts again on
+    it and `check_starts` re-picks a banked start it moved. The plain map for a word not
+    asked yet (a word offered, not chosen). None without a map."""
     sensed = line.get("senses", {}).get(t.slug)
     return sims.static_map(t) if sensed is None else sims.static_map(t, frozenset(sensed["off"]))
 
@@ -2013,9 +2133,9 @@ def main():
                            "read in bank/<lang>.md; nothing is written as a puzzle")
     mode.add_argument("--finish", metavar="ID",
                       help="make a banked line (its id in bank/<lang>.md) a candidate day: its words checked "
-                           "again, the page, the puzzle written on the maps its starts were banked on (each word's "
-                           "plain map minus its other sense), the starts checked; nothing paid, nothing swapped; "
-                           "never publishes")
+                           "again, the page, each word's plain map sorted by its line's sense (another sense removed "
+                           "or pushed farther), the puzzle written with its banked starts (one the sorted map moved "
+                           "re-picked), the starts checked; nothing paid, nothing swapped; never publishes")
     mode.add_argument("--rebank", action="store_true",
                       help="take the bank's lines again under today's taste, work by work, in place: each one "
                            "read again when never read or read under another taste, and its words chosen "

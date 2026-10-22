@@ -290,40 +290,53 @@ Consequences that are load-bearing:
   digests; `en.forms.LICENSE` is AGID's «COPYRIGHT AND SOURCE» and VarCon's «Copyright»
   sections, verbatim.
 
-### Other-sense words: a sentence map is the static map minus another sense (user-decided 2026-10-21)
+### Other-sense words: a sentence map moves another sense's words (user-decided 2026-10-21)
 
 - **A sentence puzzle ranks by the static walk; its line chooses the secret's
-  dictionary sense by TAKING OFF the groups a player reaches only through ANOTHER sense
-  of it** (`gen_phrase.build_puzzle_rank_map`, `off=`). The static order is right for a
-  one-meaning word (« poison »: poisonous 1st, toxic 5th, toxin 6th); what a line has to
-  remove is the other meaning's neighbours. The curator names those words (curation
-  `AGENTS.md`); generation only applies them, offline — no network, no key.
-- **The removal**: each off word (a display form, any case) is read the way a player
-  reaches it, by its slug on a first assembly; a word with no key, or keying the
-  secret's own group (rank 0), is IGNORED and reported. The groups reached are dropped
-  from `rank_lexemes`' list and the map is assembled AGAIN by `build_merged_rank_map`:
-  they claim no key and consume no rank (`TOP_K` counts kept groups, filter-then-cap),
-  a surface they held attaches to the next group that claims it — unless that group had
-  no key before and is then SHOWN as an off word (the same word under another lexeme,
-  which only opens once the first is gone), taken off in turn, assembly after assembly; a
-  group already on the map that gains the surface stays at its own rank — and `dq` is
-  quantized over the KEPT groups' static similarities (the same formula). A word off the map
-  reads as far to the player, the same as one pushed to the bottom. No off words = the
-  static map, unchanged.
+  dictionary sense by MOVING the words a player reaches through ANOTHER sense of it,
+  never by reordering the rest** (`gen_phrase.build_puzzle_rank_map`, `off=` and
+  `farther=`). The static order is right for a one-meaning word (« poison »: poisonous
+  1st, toxic 5th, toxin 6th); what a line has to move is the other meaning's neighbours.
+  The curator sorts them (curation `AGENTS.md`); generation only applies the lists,
+  offline — no network, no key.
+- **Reading the lists**: each word (a display form, any case) is read the way a player
+  reaches it, by its slug on the PLAIN assembly; a word with no key, or keying the
+  secret's own group (rank 0), is IGNORED and reported. A word in both lists is removed.
+- **REMOVE** (`off`): the groups reached are dropped from `rank_lexemes`' list and the
+  map is assembled AGAIN by `build_merged_rank_map`, over the entities the plain map
+  walked and no further: they claim no key and consume no rank, and their places stay
+  EMPTY — the map ends shorter than `TOP_K`, never refilled from past the plain map
+  (every word on it was sorted; the user's call: "if at the end we have only 5k words,
+  it is what it is"). A surface they held attaches to the next group that claims it —
+  unless that group had no key before and is then SHOWN as a removed word (the same word
+  under another lexeme, which only opens once the first is gone), taken off in turn,
+  assembly after assembly; a group already on the map that gains the surface stays at its
+  own rank. A removed word is a miss.
+- **FARTHER** (`farther`): the group goes right after the plain map's group at
+  `farther_rank` of its plain rank r — `max(FARTHER_FACTOR · r, 2r + FARTHER_MIN_STEP)`,
+  3 and 5 (« identified » 14th → after the 42nd; a 1st → after the 7th) — or after the last
+  group walked when that is past the end: never a miss. Kept groups keep the plain order;
+  several pushed groups keep theirs. Why ×3: a pairwise check of where such words belong
+  among their kept neighbours put them at a median ~3.5× plain; ×10 and a per-word model
+  placement sank them far too deep.
+- **`dq`** is quantized over the groups kept, by the same formula; a pushed group takes the
+  similarity of the group it now follows (every similarity capped by the one before it),
+  so `dq` stays non-increasing. No lists = the static map, unchanged.
 - **`--other-sense FICHIER`** (requires `--words`): a JSON object `{"<secret slug>":
-  ["word", …]}` whose keys are exactly the three selected secrets' slugs (an empty list
-  takes nothing off); a missing `--words`, a missing or extra key or a malformed file
-  dies before anything loads. Each hole's walk applies its own list. **The sidecar**
+  {"remove": ["word", …], "farther": ["word", …]}}` whose keys are exactly the three
+  selected secrets' slugs, each with both lists and nothing else (empty lists move
+  nothing); a missing `--words`, a missing or extra key, a missing list or a malformed
+  file dies before anything loads. Each hole's walk applies its own lists. **The sidecar**
   `<puzzle>.other-sense.json`, written beside the puzzle, is that object (keys sorted,
   lists as given): passed back as `--other-sense`, it rebuilds the identical puzzle; a
   build of the same path without `--other-sense` deletes it. The preview prints its
-  path and, per secret, how many groups were taken off and which words were ignored.
-  The interactive selector takes no list (it has no `--words`).
-- **`gen_word` takes nothing off** (`walk_secret(off=())`): a single word has no
+  path and, per secret, how many groups were removed and pushed and which words were
+  ignored. The interactive selector takes no list (it has no `--words`).
+- **`gen_word` moves nothing** (`walk_secret` with no lists): a single word has no
   sentence, so its map is the static one; every other rank-map rule is shared.
 - **ONE start band, `START_BAND` = 100–200 in SHIPPED ranks** (`start_word.py`):
   `start_band` reads the band on the rank the puzzle ships (the merge walk's 0-based
-  position + 1, the other sense already taken off) and pairs each candidate with that
+  position + 1, the other sense already moved) and pairs each candidate with that
   rank — the rank the curation package reads `START_BAND` on too. The curator uses this
   one band for every hole (curation `AGENTS.md`).
 
@@ -415,9 +428,10 @@ Consequences that are load-bearing:
   opt out explicitly); and don't re-filter against the wordlist anywhere downstream.
 - **Don't skip the cache mtime check** in `load_vectors`.
 - **Don't inject a missing target word** into the vocab in `gen_phrase` — error out.
-- **Don't reorder a sentence map with a judge.** The line's sense is chosen by TAKING OFF
-  the other sense's groups; the same-sense order stays the static one (rejected: Jev's
-  rerank, which pushed « poisonous » behind toxin and toxic).
+- **Don't reorder a sentence map with a judge.** The line's sense is chosen by MOVING the
+  other sense's groups (removed, or pushed farther by one fixed rule); the kept words' order
+  stays the static one (rejected: Jev's rerank, which pushed « poisonous » behind toxin and
+  toxic).
 
 (Cross-package Do-NOTs — slug/fold divergence, fold/display separation, lemma-merge
 containment — live in the root `AGENTS.md`.)
@@ -493,13 +507,14 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.
 #    sentences around the line into `source.excerpt` (#270) — blanks dropped, no key
 #    without a sentence, both arrays present when there is one; --url the track page
 #    into `source.url`. Neither is asked on a TTY: an excerpt is copied, not typed.
-#    --other-sense FICHIER (with --words) takes, per secret, the groups of the words named
-#    as another sense off its map ({"<secret slug>": ["word", …]}, one key per secret)
-#    and writes <puzzle>.other-sense.json beside the puzzle, which rebuilds the same
-#    puzzle when passed back. The hint band is shipped ranks 100-200.
+#    --other-sense FICHIER (with --words) moves, per secret, the words of another sense:
+#    {"<secret slug>": {"remove": [...], "farther": [...]}}, one key per secret — removed
+#    off its map, or pushed to about three times their plain rank — and writes
+#    <puzzle>.other-sense.json beside the puzzle, which rebuilds the same puzzle when
+#    passed back. The hint band is shipped ranks 100-200.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
 pnpm gen:phrase "<sentence>" --lang fr --words a b c --before "…" --after "…"   # the excerpt (#270)
-pnpm gen:phrase "<sentence>" --lang fr --words a b c --other-sense autres-sens.json   # other sense off
+pnpm gen:phrase "<sentence>" --lang fr --words a b c --other-sense autres-sens.json   # other sense moved
 
 # 4. Generate a SINGLE-WORD artifact (#154): one word + its ranked neighborhood, no
 #    sentence — the source the onboarding tutorial's board is pruned from

@@ -2,8 +2,8 @@
 play: the SENTENCE filter (`score_sentences`, `sentence_passes`: what the model should not
 have to read) and the GIVEAWAY (`giveaway`: how much a line hands a hidden word over — the
 floor under which a word is never hidden, the bar under which a hole plays hard). Jev
-orders no map: a sentence puzzle ranks by the plain static order, minus the words of
-another sense (generation `AGENTS.md`).
+orders no map: a sentence puzzle ranks by the plain static order, the words of another
+sense removed or pushed farther (generation `AGENTS.md`).
 
 ONE TEMPLATE PER LANGUAGE (#317): every question and the state keys it reads live in one
 `Language`, written in the line's own language. French is the calibrated original (its

@@ -604,9 +604,10 @@ def other_sense(claude: Claude, sentence: str, word: str, words: list[str], *, l
     false when the line uses a sense the map barely holds (« bank » for a riverbank on a map
     of finance), and for a figurative or euphemistic sense the words of THAT sense must be
     there, not those of the literal sense it comes from (« s'éteindre » for dying needs
-    mourir). Returns {"used", "other", "words", "carried", "why"} for the first round,
-    {"words", "carried", "why"} for a later one — `words` only words of `words` not already in
-    `off`, as listed; None when the answer is unusable."""
+    mourir). Returns {"used", "senses", "other", "words", "carried", "why"} for the first round
+    (`senses`: each dictionary sense of the word, the one used included), {"words", "carried",
+    "why"} for a later one — `words` only words of `words` not already in `off`, as listed; None
+    when the answer is unusable."""
     first = not off
     prompt = f"""A daily {LANGUAGE[lang]} word game hides a word in a line. Players guess words; each guess is ranked by
 how close its MEANING is to the hidden word, in the dictionary sense the line uses.
@@ -668,7 +669,72 @@ Return {"words": [...], "carried": true/false, "why": "<one short sentence on ca
     used = answer.get("used")
     if type(answer.get("other")) is not bool or not isinstance(used, str) or not used.strip():
         return None
-    return {"used": used.strip(), "other": answer["other"], "words": picked, "carried": answer["carried"], "why": why}
+    senses = [s.strip() for s in answer.get("senses") or [] if isinstance(s, str) and s.strip()]
+    return {"used": used.strip(), "senses": senses, "other": answer["other"], "words": picked,
+            "carried": answer["carried"], "why": why}
+
+
+def sort_neighbours(claude: Claude, sentence: str, word: str, used: str, others: list[str], start: int,
+                    words: list[str], *, lang: str) -> dict | None:
+    """One window of a hidden word's plain map sorted by the sense its line uses (user-decided
+    2026-10-21: three cases per word): KEEP — a word of the line's sense, close or loose, or
+    noise — is not listed; REMOVE — a word that belongs ENTIRELY to another sense, which leaves
+    the map; FARTHER — a word that leans toward another sense but still shares part of the
+    line's, which stays on the map farther down (« identified » for « recognized »). `words`:
+    the window, closest first, ranks `start` + 1 onward; `used` / `others`: the sense the line
+    uses and the word's other senses (`other_sense`'s first round). Returns {"remove",
+    "farther"}: words of `words` as listed, a word named in both removed; None when the answer
+    is unusable."""
+    prompt = f"""A daily {LANGUAGE[lang]} word game hides a word in a line. Players guess words; each guess is ranked by
+how close its meaning is to the hidden word, in the meaning the line uses.
+
+The line: « {sentence} »
+The hidden word: « {word} »
+In this line it means: {used}
+Its other meanings: {"; ".join(others) or "none"}
+
+The words below come from the hidden word's word-vector map, ranks {start + 1} to {start + len(words)} of about
+10,000, closest first. The map mixes every meaning of the word, so some words are there only
+because of a meaning the line does not use. Go through every word and put it in one of three
+groups:
+
+  KEEP: a word of the line's meaning, close or loose (synonyms, the same family, the same
+  category, opposites, things often found with it in that meaning), and a word related to no
+  meaning of the hidden word at all (noise). Most words are here. Do not list them.
+
+  REMOVE: a word that belongs ENTIRELY to a wrong meaning: nothing in it points to the line's
+  meaning. A player who types it will be told it has nothing to do with the hidden word.
+
+  FARTHER: a word that leans toward a wrong meaning but still shares part of the line's
+  meaning, so a player who has the line's meaning in mind could see a link. It stays in the
+  game, ranked farther than it is now.
+
+Examples.
+  « sharp » meaning clever (a sharp student): keep « smart », « astute »; farther « pointed »,
+  « piercing » (a blade's sharpness, but also a sharp mind's); remove « knife », « blade »,
+  « serrated ».
+  « vol » meaning a flight: remove « cambriolage », « voleur », « larcin » (theft).
+  « bank » meaning a riverbank: remove « loan », « teller », « mortgage » (money).
+  A word that comes only from an expression built on a wrong meaning is removed too: for
+  « dog » meaning the animal, « mustard » and « bun » (hot dog).
+
+Words: {', '.join(words)}
+
+Return {{"remove": ["<word, exactly as listed>", ...], "farther": [...]}}; either list may be empty."""
+    answer = claude.json(prompt)
+    if not isinstance(answer, dict):
+        return None
+    shown = {w.strip().lower(): w for w in words}
+    picked: dict[str, list[str]] = {}
+    for group in ("remove", "farther"):
+        named = answer.get(group, [])
+        if not isinstance(named, list) or not all(isinstance(w, str) for w in named):
+            return None
+        # A word as the answer echoes it, matched whatever its case or quotes, kept as listed.
+        picked[group] = list(dict.fromkeys(shown[k] for k in (w.strip().strip("«»").strip().lower() for w in named)
+                                           if k in shown))
+    picked["farther"] = [w for w in picked["farther"] if w not in picked["remove"]]
+    return picked
 
 
 def pick_form(claude: Claude, sentence: str, secret: str, choices: list[str], *, lang: str) -> int:

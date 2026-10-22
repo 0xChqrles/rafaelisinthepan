@@ -151,8 +151,9 @@ def chosen(e: dict) -> bool:
 
 def sensed(e: dict) -> bool:
     """Whether each of a banked line's three words carries its other-sense check
-    (`curate.sense`: the words its map loses), the check its starts were chosen after."""
-    return bool(e.get("trio")) and all(s in (e.get("senses") or {}) for s in e["trio"])
+    (`curate.sense`: the words its map loses, and whether the line's sense has another one —
+    what decides that the build sorts its whole map), the check its starts were chosen after."""
+    return bool(e.get("trio")) and all("other" in ((e.get("senses") or {}).get(s) or {}) for s in e["trio"])
 
 
 def finishable(e: dict) -> bool:
