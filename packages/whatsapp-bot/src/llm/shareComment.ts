@@ -55,11 +55,11 @@ const ROUNDS = 2;
 const SHAPE: CandidateShape = { maxChars: COMMENTARY_MAX_CHARS, timeoutMs: 15_000 };
 
 // What the player wrote around the share, when it is in the facts (`ShareCommentDeps.said`).
-const SAID = `If the facts carry "said", that is what the player wrote with their share: when it asks you something or says something worth an answer, your line answers it — in place of the commentary, not on top of it, at the same length.`;
+const SAID = `If the facts carry "said", that is what the player wrote with their share. When it asks you something or says something worth an answer, your line answers it instead of commenting the result, at the same length.`;
 
-const TASK = `Task: comment on the Whippin result below, as a message in the group, from the FACTS given and nothing else. Every number, name, position and comparison you write must come from the facts; you never invent or round one.
+const TASK = `Task: react to the Whippin result below, as a message in the group, from the FACTS given. Any number, name or place you say comes from the facts, never invented.
 
-A score on its own says nothing, and neither does a score held against another day's: what it is worth depends on how the others did with the SAME sentence. So the news is where it lands among today's posters — who it beats, who is still above, how the others are doing — and how that compares with where this player usually lands: how many of the others they usually beat, their recent places, their record against the people on today's board (beating somebody they usually lose to, losing to somebody they usually beat). When nobody else has posted, there is nothing to compare it with yet: say so in a few words, with at most where they usually land. When few have posted, say the reading is early. Say what is interesting in these numbers and skip what is not — one thing said well beats three listed; a share with nothing notable gets a plain short acknowledgement. This line is about the result: your own life stays out of it. ${SAID} Speak to the player as "tu" and about the others by name. Plain text only, no quotes, one or two short sentences.`;
+A score is only worth something next to today's other scores. Say the ONE thing a friend would actually say about it: who it beats, who is still ahead, that it is the first one in, that for once they beat somebody they usually lose to. Say it in plain words, never as a statistic: no counts like "5 fois sur 13", no fractions, no records, no medians. A result with nothing notable gets a plain short acknowledgement. Your own life stays out of it. ${SAID} "tu" to the player, the others by name. Plain text, no quotes, one short sentence, two at most.`;
 
 export async function generateShareComment(
   provider: LlmProvider,

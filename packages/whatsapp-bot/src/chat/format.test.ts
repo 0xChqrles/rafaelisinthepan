@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { REPLY_MAX_CHARS, linkKey, replyText, urlsIn, withoutUnseenLinks } from './format';
+import { REPLY_MAX_CHARS, linkKey, replyText, urlsIn, withoutUnseenLinks, plainPunctuation } from './format';
 
 describe('a reply as WhatsApp shows it (v22)', () => {
   it('never touches a link: underscores, anchors, tildes and brackets survive', () => {
@@ -62,5 +62,21 @@ describe('a reply as WhatsApp shows it (v22)', () => {
     expect(withoutUnseenLinks('Deux :\n- https://made.up/x\n- https://seen.com/a', allowed)).toBe('Deux :\n- https://seen.com/a');
     // Nothing to take out: the text as written, French spaces and all.
     expect(withoutUnseenLinks('Tout est là : https://seen.com/a ?', allowed)).toBe('Tout est là : https://seen.com/a ?');
+  });
+});
+
+describe('the punctuation a model reaches for is taken out (v23)', () => {
+  it('turns long dashes and semicolons into what a person types, and leaves hyphens alone', () => {
+    expect(plainPunctuation('Zou te passe devant — encore.')).toBe('Zou te passe devant, encore.');
+    expect(plainPunctuation('Gab — le roi du jour — a fini en 4.')).toBe('Gab, le roi du jour, a fini en 4.');
+    expect(plainPunctuation('Trop facile ; même toi.')).toBe('Trop facile, même toi.');
+    expect(plainPunctuation('— un\n– deux')).toBe('- un\n- deux');
+    expect(plainPunctuation('entre 10–12 euros')).toBe('entre 10-12 euros');
+    expect(plainPunctuation('Fini —')).toBe('Fini');
+    expect(plainPunctuation('peut-être ;)')).toBe('peut-être ;)');
+  });
+
+  it('runs on every reply, never inside a link', () => {
+    expect(replyText('Lis ça — https://ex.com/a—b ; promis')).toBe('Lis ça, https://ex.com/a—b, promis');
   });
 });

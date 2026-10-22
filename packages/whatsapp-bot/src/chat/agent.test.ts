@@ -445,18 +445,14 @@ describe("the day's source rides in the system prompt, never as a tool (#236)", 
     expect(requests).toHaveLength(1);
     expect(requests[0].system).toContain('kind: music');
     expect(requests[0].system).toContain('author: Bertrand Belin');
-    expect(requests[0].system).toMatch(/NOT name the author or the work/);
+    expect(requests[0].system).toMatch(/the author and the work included/);
   });
 
-  it('drops an answer that spells the author or the work, whatever the prompt was told', async () => {
+  it('lets the answer name the author and the work (v23)', async () => {
     const dayLog = new DayLog(memoryDayLogStore());
     await said(dayLog, 'ça vient d’où ?');
-    for (const [i, text] of ["C'est Oiseau, de Bertrand Belin.", 'bertrand BELIN, évidemment', 'BertrandBelin'].entries()) {
-      const { provider } = scripted([() => ({ text })]);
-      expect(await agentWith(provider, { dayLog, daySource: reader })(message('@33700000000 ça vient d’où ?', { id: `L${i}` }), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'spoiler' });
-    }
-    const { provider } = scripted([() => ({ text: "Je sais, c'est une chanson, et je dirai pas laquelle. Pas un oiseau en vue." })]);
-    expect((await agentWith(provider, { dayLog, daySource: reader })(message('@33700000000 alors ?'), group, identity, TODAY, asked())).kind).toBe('reply');
+    const { provider } = scripted([() => ({ text: "C'est Oiseau, de Bertrand Belin." })]);
+    expect(await agentWith(provider, { dayLog, daySource: reader })(message('@33700000000 ça vient d’où ?'), group, identity, TODAY, asked())).toEqual({ kind: 'reply', text: "C'est Oiseau, de Bertrand Belin." });
   });
 
   it('a reader that says nothing, or none at all, leaves the prompt with no source', async () => {

@@ -6,13 +6,12 @@
 //
 // - TODAY'S SENTENCE NEVER REACHES IT (`puzzle/spoilers.ts`). A search result or a page that
 //   holds the day's line across a hidden word is WITHHELD before the model reads it, in every
-//   language the game publishes; a query that names a day's author or work, or quotes a
-//   sentence, finds nothing. The guard is today's puzzles, read in full and held in code
+//   language the game publishes; a query that quotes a sentence finds nothing. The guard is today's puzzles, read in full and held in code
 //   (`daySource.read`): when it cannot be read, the web is CLOSED for that answer rather
 //   than open without it. AND THE MODEL IS NEVER TOLD WHY: a refused query answers like a
 //   search that found nothing, a withheld result is simply not there, a withheld page reads
 //   like one with nothing on it — a guard that said "that is today's sentence" would be a
-//   yes-or-no answer to a member's guess, the quiet leak the source rule forbids.
+//   yes-or-no answer to a member's guess, a quiet leak.
 // - A PAGE IS ONE THE BOT HAS SEEN A LINK TO: in the conversation, or in a result or a page
 //   of this same answer — never a URL the model composed, and what is sent to the reader is
 //   the link AS IT WAS SHOWN, never the model's spelling of it (a fragment, a `user@` added).
@@ -30,7 +29,6 @@
 import type { Log } from '../log';
 import { tag } from '../log';
 import { WebUnavailable, type LlmTool, type WebClient } from '../llm/types';
-import { revealsSource, type DaySource } from '../puzzle/daySource';
 import { revealsSentence, type DaySecrets } from '../puzzle/spoilers';
 import { linkKey, urlsIn } from './format';
 
@@ -39,14 +37,13 @@ export const MAX_READS = 4;
 
 // One published puzzle of today, as the guard holds it.
 export interface DayGuard {
-  source: DaySource | null;
   secrets: DaySecrets | null;
 }
 
-// Whether a text gives away one of today's puzzles: its sentence across a hole, or — for a
-// query or a reply, never a result — its author or work spelled out.
-export function givesAway(text: string, days: readonly DayGuard[], withSource = true): boolean {
-  return days.some((d) => revealsSentence(text, d.secrets) || (withSource && revealsSource(text, d.source)));
+// Whether a text gives away one of today's puzzles: its sentence across a hole. Its author
+// and its work are not a giveaway (v23): the bot may name them, and search them.
+export function givesAway(text: string, days: readonly DayGuard[]): boolean {
+  return days.some((d) => revealsSentence(text, d.secrets));
 }
 
 export interface WebToolDeps {
@@ -79,7 +76,7 @@ const DEFINITIONS: LlmTool[] = [
     description:
       'Search the web. Use it for anything recent, local, specific or checkable — news, results, schedules, prices, what is on, a claim to check — instead of answering from memory. ' +
       'One query of at most 128 characters, in the language most likely to find good pages; it supports "exact phrase", site:example.com, -word, lang:fr, after:2026-01-01 and before:2026-12-31. ' +
-      'Returns up to 6 results with title, url, site, date and summary. Never for today\'s Whippin sentence.',
+      'Returns up to 6 results with title, url, site, date and summary. Never to find the text of today\'s Whippin sentence.',
     parameters: {
       type: 'object',
       properties: { query: { type: 'string', description: 'What to search for.' } },
@@ -192,7 +189,7 @@ export function createWebTools(deps: WebToolDeps): WebTools {
     const open = found.filter((r) => !blocked(r.url));
     // Every field the model is shown, the link decoded: a quotes or lyrics site spells the
     // line in its path (`/je-marche-seul-dans-la-nuit`).
-    const kept = open.filter((r) => !givesAway(`${r.title}\n${decoded(r.url)}\n${r.site ?? ''}\n${r.summary}`, days, false));
+    const kept = open.filter((r) => !givesAway(`${r.title}\n${decoded(r.url)}\n${r.site ?? ''}\n${r.summary}`, days));
     for (const r of kept) note(r.url);
     log('web.search', { results: kept.length, withheld: open.length - kept.length, latencyMs: Date.now() - started });
     return { results: kept };
@@ -235,7 +232,7 @@ export function createWebTools(deps: WebToolDeps): WebTools {
               : 'the page did not load: try once more or answer without it',
       };
     }
-    if (isPuzzle(page.content) || givesAway(`${page.title}\n${decoded(page.content)}`, days, false)) {
+    if (isPuzzle(page.content) || givesAway(`${page.title}\n${decoded(page.content)}`, days)) {
       log('web.withheld', { tool: 'read_page', latencyMs: Date.now() - started });
       return NOTHING_READABLE;
     }

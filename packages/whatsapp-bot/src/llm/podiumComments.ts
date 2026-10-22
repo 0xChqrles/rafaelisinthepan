@@ -23,6 +23,7 @@
 // (`echoes`): the later one is written again, told what to avoid.
 
 import { fold } from '@whippin/shared';
+import { plainPunctuation } from '../chat/format';
 import type { GroupConfig } from '../config/groupConfig';
 import type { Podium } from '../domain/podium';
 import { medianScore, type PodiumContext } from '../domain/shareContext';
@@ -54,8 +55,8 @@ export function sanitizeComment(raw: unknown, maxChars: number = COMMENT_MAX_CHA
   let text = raw
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ' ')
     .replace(/[*_~`]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/\s+/g, ' ');
+  text = plainPunctuation(text).trim();
   if (/^["'«“].*["'»”]$/.test(text)) text = text.slice(1, -1).trim();
   if (text === '' || text.length > maxChars) return null;
   return text;
@@ -85,9 +86,9 @@ export function podiumCommentLines(podium: Podium): PodiumCommentLine[] {
   }));
 }
 
-const TASK = `Task: one short comment under ONE line of tonight's podium, from the FACTS given and nothing else. Every number, name, position and comparison you write must come from the facts; you never invent or round one. The line's own name and score are printed right above your comment, so you do not repeat them — the others' names, and every number, are yours to use.
+const TASK = `Task: one short comment under ONE line of tonight's podium, from the FACTS given. Any number, name or place you say comes from the facts, never invented. The line's own name and score are printed right above your comment, so do not repeat them.
 
-A score is worth what the others made of the same sentence tonight, never what another day cost. What brings value: where this line lands among tonight's players and how the others did; how that compares with where these players usually land against the others — how many of the others they usually beat, their recent places, their record against the people just above and below; and, when the day's conversation or your diary holds something about this player that is genuinely worth a callback — a promise, a bet, a running joke, something they said today — that, in passing. Every number comes from the facts: the conversation and the diary are for what people said and did, never for a score, a place or a best, and tonight's score is never held against another day's. This line is about the result: your own life stays out of it. Pick the ONE thing that is news about this line and say only that: one comparison, or one callback, never a list. Speak to the player as "tu", never about them; a line is ONE player, even when others made the same score. Plain text only, no quotes, ONE short sentence of about fifteen words; a line with nothing notable gets a plain short acknowledgement.`;
+A score is only worth something next to tonight's other scores. Say the ONE thing a friend would actually say about this line: who it beat, who beat it, that for once they beat somebody they usually lose to, or a callback to something from the day's conversation or your diary (a promise, a bet, a running joke). Say it in plain words, never as a statistic: no counts like "5 fois sur 13", no fractions, no records, no medians. Your own life stays out of it. "tu" to the player, never about them, and a line is ONE player even when others made the same score. Plain text, no quotes, ONE short sentence. A line with nothing notable gets a plain short acknowledgement.`;
 
 const MAX_TOKENS = 4000;
 // COUNTS NOW THAT THINKING IS OFF (DeepSeek ignores it while thinking). 1.1 was the

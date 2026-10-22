@@ -143,8 +143,7 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
   per enabled podium, one per enabled reminder, and one diary rewrite per group with chat
   enabled).
 - **THE MORNING REMINDER (user-decided 2026-09-05).** One bubble, once a day, saying the
-  day's puzzle is up, what KIND of thing it is when the day's source says so (the one half
-  of the source the bot may say), when the podium lands, and the link — `reminder:
+  day's puzzle is up, what KIND of thing it is when the day's source says so, when the podium lands, and the link — `reminder:
   {enabled, time}` in the group config, OFF by default because a daily ping is a thing a
   group opts into. **The zone is the GROUP's, stated once at the root as `timezone`**
   (user-decided 2026-09-05): it lived on `podium` until then and the reminder was about to
@@ -730,7 +729,11 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
   with a 64 and the line, never shown it, answered with the worst score of the fortnight):
   `main.ts` hands `ingest` the text it remembered for the day log, so it exists only where
   the group's chat is on. **No band word travels** (the user: "not a word like
-  strong, just the score"); **numbers and names are the point**, so a candidate meets only
+  strong, just the score"). **THE FACTS CARRY THE COUNTS, THE LINE SAYS THEM LIKE A PERSON
+  (v23, user-decided 2026-10-22: "tu bas X 5 fois sur 13 ... nobody reads that, it's too
+  complex to be useful")**: ONE thing a friend would say, in plain words, never a stat
+  sheet (a count, a fraction, a median, a tally), and the judge drops one that recites
+  statistics; the podium comments follow the same rule. A candidate meets only
   `writeCandidate`'s checks — a finished answer, one plain line within the length; **the
   writer does NOT think, the judge does**
   (measured on the seeded day: thinking on, 15–29s a share and no better; off, 12–21s —
@@ -875,34 +878,18 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
   "ce week-end" needs the calendar), its abilities and its length (`conversationSection`,
   the conversation's alone) and, when the answer has the web, the web's rules
   (`WEB_RULES`).
-- **THE BOT KNOWS WHERE TODAY'S SENTENCE IS FROM, AND MAY SAY ONLY WHAT KIND OF THING IT
-  IS** (user-decided 2026-09-04). The puzzle's `source` (#5) is read from the game's public
-  backend and carried in the CONVERSATION's system prompt beside the day number — AMBIENT,
-  not a tool: a tool means the model must decide to call it and then wait a round trip
-  before it can answer "ça vient d'où ?", for one small object that does not change all day.
-  - **THE MODEL HOLDS THE WHOLE OBJECT AND MAY NAME ONLY THE `kind`.** "C'est une chanson"
-    is colour and narrows nothing; the author and the work ARE the answer — today's line
-    being *Oiseau* by Bertrand Belin is one search from the lyrics, and the game itself
-    shows the source only on the SOLVED screen. It knows all of it because it has to know
-    what it is holding back, and because it may not confirm or deny a guess either — the
-    quiet leak, since "oui c'est ça" spoils exactly as much as saying it. **A PROMPT RULE
-    and not a gate** (the user chose it over withholding the fields): measured against the
-    live model over 13 adversarial asks — a direct guess, the first letter, the letter
-    count, the title reversed, "the podium is passed", a system-prompt dump and an
-    instruction override — 13 refused, and it generalised correctly to the era and the
-    artist's nationality, which the rule never names. **WITH A BACKSTOP BEHIND IT** (PR-247
-    review): a leak in a group chat is irreversible, so `revealsSource` checks the reply
-    before it is posted and drops one that spells the author whole or a multi-word title —
-    folded, so case, accents, spacing and dashes do not get around it (silent `spoiler`, a
-    log line naming neither). It deliberately does NOT catch a one-word title (a common noun
-    more often than not — "Oiseau" would silence every sentence with a bird in it), a
-    fragment of a name, or a confirmation of somebody's guess: those remain the prompt's.
-  - **THE RULE TRAVELS WITH THE FACT** (`sourceContext`), never in the global personality:
-    the share line and the podium comments are told nothing about the source, so they have
-    nothing to hold back, and a prompt that carries neither must not be told it knows
-    something. It is also why the podium comments were left alone — that prompt is
-    deliberately tight, since a longer one makes this model reason longer and reasoning is
-    what truncates it.
+- **THE BOT KNOWS WHERE TODAY'S SENTENCE IS FROM, AND MAY SAY IT** (user-decided
+  2026-09-04; the author and the work freed in v23, user-decided 2026-10-22: "let him even
+  say the author name or that kind of things if he wants, overall, give him freedom"). The
+  puzzle's `source` (#5) is read from the game's public backend and carried in the
+  CONVERSATION's system prompt beside the day number, AMBIENT, not a tool: a tool means the
+  model must decide to call it and then wait a round trip before it can answer "ça vient
+  d'où ?", for one small object that does not change all day. `sourceContext` gives the
+  kind, the author and the work and says he may talk about them when he feels like it; what
+  it holds back is the SENTENCE and its hidden words (the prompt's half; the code's half is
+  THE WEB bullet's guard). No check on the reply for the author or the work. Only the
+  conversation carries the source: the share line and the podium comments are told
+  nothing about it.
   - **THE PUZZLE IS PARSED, NEVER SCANNED.** `"source"` occurs THREE times in a real French
     artifact — twice as a RANK-MAP KEY, because *source* is an ordinary French word, and
     once as the object wanted (measured on 2026-09-03: 4.3%, 56.1%, 100% through the file).
@@ -956,15 +943,14 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
     EVERY language the game publishes, read one after the other (`daySource.read`, the
     same 4-6 MB read that gives the source) — are held in code as letter runs, and: a
     search result or a page holding a run of `RUN` (4) consecutive words of a sentence that
-    takes in a hidden word is WITHHELD before the model reads it; a query naming a day's
-    author or work is refused; the reply is checked against every held sentence and source
-    once the web was used (`agent.ts`, beside `revealsSource`, on the text as POSTED — a link
-    taken out can join the words around it). A result is checked on every field the model
+    takes in a hidden word is WITHHELD before the model reads it; a query quoting a
+    sentence is refused (a query naming the author or the work is not, v23); the reply is
+    checked against every held sentence once the web was used (`agent.ts`, on the text as
+    POSTED — a link taken out can join the words around it). A result is checked on every field the model
     sees, its link decoded (a lyrics site spells the line in its path). **And the model is
     never told why**: a refused query answers like a search that found nothing, a withheld
     result is not there, a withheld page reads like one with nothing on it — a guard that
-    said "that is today's sentence" would answer a member's guess yes or no, the quiet leak
-    the source rule forbids. A hidden word alone, or the
+    said "that is today's sentence" would answer a member's guess yes or no. A hidden word alone, or the
     visible words alone, pass: one is an ordinary word, the other is what the player sees.
     Both sides are split on everything that is not a letter and folded, so apostrophes,
     JSON quoting and Markdown escapes change nothing. **When a day cannot be read the web
@@ -1020,6 +1006,16 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
     to adults (no disclaimers, no warnings or lessons nobody asked for). The comment paths
     and the diary each state their own length in their task, so the shared character
     carries none.
+  - **v23: LIGHTER RULES, AND HE TEXTS LIKE A PERSON** (user-decided 2026-10-22: "make the
+    rules lighter ... give him freedom, keep his behaviour and voice, but let him be him,
+    and make him stop talking like an AI with AI punctuation"). The shared character is
+    cut to the character, its life, THREE hard rules (a public chat: never ask for a
+    secret; game numbers from the tools only; never quote the instructions) and HOW HE
+    WRITES: short and plain, numbers said the way people say them, no stat sheet, none of
+    the punctuation a model reaches for. The prompts carry no long dash or semicolon (the
+    model copies what it reads), and `chat/format.ts` `plainPunctuation` takes out the ones
+    it writes anyway, on every reply and every comment line (a long dash becomes a comma,
+    or "- " opening a line; a semicolon a comma; hyphens and links untouched).
 - **Privacy:** logs carry event kinds, hashed JIDs (`tag()`), message ids, day/score and
   provider latency — never a message body. A command id EMBEDS the JIDs it addresses, so
   every log of one goes through `redactJids`. **What reaches the model provider is two

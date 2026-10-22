@@ -72,6 +72,23 @@ function whatsappMarks(text: string): string {
     .replace(/~~(?=\S)([^~\n]+?)~~/g, '~$1~');
 }
 
+// THE PUNCTUATION A MODEL REACHES FOR AND A PERSON TEXTING NEVER TYPES (v23, user-decided
+// 2026-10-22: "make him stop talking like an AI with AI punctuation"). The prompt asks for
+// none of it, and the model writes the dashes anyway, so they are taken out here: a dash
+// opening a line is a list's "- ", a dash between two numbers is a range's hyphen, any other
+// long dash is a comma, and a semicolon is a comma too. Hyphens are never touched
+// (`peut-être`, a link's path).
+export function plainPunctuation(text: string): string {
+  return text
+    .replace(/^([ \t]*)[—–][ \t]*/gm, '$1- ')
+    .replace(/(\d)[ \t]*[—–][ \t]*(?=\d)/g, '$1-')
+    .replace(/[ \t]*[—–]+[ \t]*/g, ', ')
+    .replace(/[ \t]*;(?=[ \t\n]|$)[ \t]*/gm, ', ')
+    .replace(/,[ \t]*(?=[,.!?…)]|$)/gm, '')
+    .replace(/,[ \t]*,/g, ',')
+    .replace(/^([ \t]*), /gm, '$1');
+}
+
 // The cut, never inside a link: at a paragraph, a line or a sentence end past half the room,
 // else at a space, else just before the link that would have been split.
 function cutAt(text: string, max: number): string {
@@ -108,7 +125,7 @@ export function replyText(raw: string | null): string | null {
       const url = trimUrl(raw, whole, at);
       return hold(url) + raw.slice(url.length);
     });
-  text = whatsappMarks(text)
+  text = plainPunctuation(whatsappMarks(text))
     .replace(/[ \t]+/g, ' ')
     .replace(/ *\n */g, '\n')
     .replace(/\n{3,}/g, '\n\n')
