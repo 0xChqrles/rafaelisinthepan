@@ -36,6 +36,8 @@
                              index.json (state), quotes/<file>.txt (each book's quoted lines, per
                              shelf_quotes)
     runs/                    GITIGNORED: one markdown log per run (every rejection names its rule)
+    bank/<lang>.jsonl        GITIGNORED: banked lines, finished but for the ranking (`--bank`; scripts/bank.py),
+    bank/<lang>.md           read here (SPOILERS); `--finish <id>` makes one a candidate day
     tests/                   pytest, dependency-free (rules, sentences, epub, lyrics); the LLM never runs
     pyproject.toml, uv.lock  claude-agent-sdk, spacy + fr_core_news_md + en_core_web_md (URL wheels),
                              gensim/numpy, lyricsgenius
@@ -75,6 +77,33 @@ pnpm curate [--lang fr|en] [--work <file on the shelf>] [--retry <shelf file | p
 #   the sentence is found again among the work's mined units for its casing; the mining,
 #   judge and shortlist are skipped, the day is chosen on that one line. A sentence the
 #   ledger holds is refused.
+pnpm curate [--lang fr|en] --bank N [--work <file>] [--blind]
+#   BANKS N works (the whole shelf, as many as asked) instead of making a day (user-decided
+#   2026-10-18: lines curated ahead, the user picks the ones to finish). Each work is mined,
+#   quote-tested, through the judge's sentence filter and shortlisted as a run does; EVERY
+#   line of its shortlist (SHORTLIST, 20) is finished as a day but for the ranking: its
+#   three words chosen and checked (`curate.prepare`), then its START WORDS chosen on the
+#   words' FREE static maps by the run's own start step and checks (`curate.bank_line` on an
+#   in-memory draft, `static_draft`) — and appended to bank/<lang>.jsonl with what it was
+#   measured at. Nothing is ranked, compared or written as a puzzle. bank/<lang>.md
+#   (`bank.render`, SPOILERS) lists every banked line by work with its id, its hidden words
+#   and its starts. The works keep the calendar's shape (`curate.bank_pick`: one song per
+#   MUSIC_EVERY_DAYS works, an artist's next song once ARTIST_COOLDOWN_DAYS more works are
+#   banked, authors spread; songs held back only until the books run out), with no artist
+#   cooldown; a banked work is never mined again, by a bank or a run (a work that banked no
+#   line stays as a marker entry). Processes may run side by side, a normal run included:
+#   each CLAIMS its work under the bank's lock (bank/<lang>.claims, `<file>\t<pid>`; a claim
+#   whose process is gone no longer counts), re-reading the index before each pick; a
+#   banking process logs to its own runs/<stamp>-bank-<pid>.md and releases a work whose
+#   banking failed (its detail kept with the spoilers; two failures in a row stop it).
+#   Exit 2 when nothing was banked.
+pnpm curate [--lang fr|en] --finish <id> [--blind]
+#   A banked line the user chose, made ONE candidate day: read against today's archive
+#   (`bank.restore`: a published work or sentence, or a word back in its secret cooldown,
+#   is refused), then built as a run builds its chosen line (`curate.build_day`: page, the
+#   ranking, start words and their checks). The start step is shown each banked start with
+#   where it now stands on the ranked map (`llm.PRIOR_RULE`): kept while still a candidate
+#   of the band, unless the ranked map offers a better one. Never publishes.
 pnpm shelf:lyrics [--lang fr] [--artists shelf/<lang>/artists.txt] [--max-songs N]
 #   The music source (#262): for each artist of the user's hand-written list, the songs
 #   from Genius most viewed first, minus the top FAMOUS_SHARE (the singles), minus what

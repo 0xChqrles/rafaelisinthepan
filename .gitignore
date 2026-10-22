@@ -52,6 +52,8 @@ packages/generation/published.jsonl
 # read, which sentences were proposed); runs/ holds one log per run. Never committed.
 packages/curation/shelf
 packages/curation/runs
+# The bank: finished lines kept for a later day (curate --bank): the work's text, and spoilers.
+packages/curation/bank
 
 # ── Offline benchmark lab output (issue #80) ─────────────────
 # Full paid-run session records (transcripts, transport, timing, token usage) stay

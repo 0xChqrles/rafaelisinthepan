@@ -15,6 +15,8 @@ GENERATION_SCRIPTS_DIR = GENERATION_DIR / "scripts"
 BENCHMARK_SCRIPTS_DIR = REPO_ROOT / "packages" / "benchmark" / "scripts"
 SHELF_ROOT = CURATION_DIR / "shelf"
 RUNS_DIR = CURATION_DIR / "runs"
+# Finished lines kept for a later day (`curate --bank`), one file per language: gitignored.
+BANK_DIR = CURATION_DIR / "bank"
 SKILL_FILE = REPO_ROOT / ".claude" / "skills" / "find-sentences" / "SKILL.md"
 # TASTE has ONE home (2026-09-24): what makes a day worth playing, read whole by every prompt
 # that chooses a line, a trio or a start word.
