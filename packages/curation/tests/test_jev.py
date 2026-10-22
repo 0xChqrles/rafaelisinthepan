@@ -1,10 +1,9 @@
-"""CONTRACT: the curator's two Jev questions, the sentence filter and the giveaway.
+"""CONTRACT: the curator's one Jev question, the sentence filter.
 
-  - every question is asked in the line's language: French byte-for-byte the calibrated
-    requests, English its twin with its own state keys (#317);
+  - every question is asked in the line's language: French the calibrated questions word
+    for word, English its twin with its own state keys (#317);
   - the sentence filter asks its three questions per sentence and keeps reading order;
     it is loose, and removes only the unreadable, the flat and the famous;
-  - the giveaway is the mean of its three questions on the blanked sentence;
   - a judge that cannot answer is a hard error, never a guess: a throttled or
     unreachable service is retried with capped backoff, any other refusal is not.
 """
@@ -34,32 +33,7 @@ class FilteringJudge:
                 for key, (instructions, _t, _f) in questions.items()}
 
 
-# --- the request: French byte-for-byte the calibrated one -----------------------------------
-def test_a_french_giveaway_sends_the_calibrated_request_byte_for_byte(monkeypatch):
-    sent = []
-
-    def urlopen(request, timeout):
-        sent.append(request.data)
-        return io.BytesIO(json.dumps({"answers": {k: {"noul": 0.5} for k in ("exact", "syn", "colloc")},
-                                      "usage": {}}).encode("utf-8"))
-    monkeypatch.setattr(jev.urllib.request, "urlopen", urlopen)
-    assert jev.giveaway(jev.JevJudge("k"), "le _____ se faisait", "silence", lang="fr") == pytest.approx(0.5)
-    calibrated = (
-        '{"state": {"phrase_a_trou": "le _____ se faisait", "mot": "silence"}, "model": "jev-latest", '
-        '"questions": {"exact": {"type": "noul", "instructions": "Un lecteur qui lit `phrase_a_trou` sans aucun '
-        'autre indice écrirait-il spontanément le mot `mot` (ou une de ses formes) dans le blanc ?", "criteria": '
-        '{"true": "La plupart des lecteurs écriraient ce mot", "false": "Les lecteurs écriraient autre chose, ou '
-        'hésiteraient entre des mots très différents"}}, "syn": {"type": "noul", "instructions": "Un lecteur qui '
-        'lit `phrase_a_trou` sans aucun autre indice écrirait-il spontanément le mot `mot` OU un synonyme direct '
-        'de ce mot dans le blanc ?", "criteria": {"true": "La plupart des lecteurs écriraient ce mot ou un '
-        'synonyme direct", "false": "Les lecteurs écriraient des mots d\'un autre sens, ou hésiteraient entre des '
-        'idées différentes"}}, "colloc": {"type": "noul", "instructions": "Dans `phrase_a_trou`, les mots voisins '
-        'du blanc forment-ils avec `mot` une expression figée ou une association très fréquente qui le rend '
-        'presque automatique ?", "criteria": {"true": "Oui, l\'expression ou l\'association appelle ce mot", '
-        '"false": "Non, beaucoup de mots différents iraient aussi bien"}}}}')
-    assert sent == [calibrated.encode("utf-8")]
-
-
+# --- the request: French the calibrated questions word for word ------------------------
 def test_a_french_sentence_filter_sends_the_calibrated_questions():
     judge = FilteringJudge({})
     jev.score_sentences(judge, ["Le chat dort."], lang="fr")
@@ -188,11 +162,8 @@ def test_jev_judge_refuses_to_exist_without_a_key():
 # --- English: the same questions in English, with English state keys (#317) -----------
 def test_every_template_speaks_its_own_state_keys():
     for lang in jev.LANGUAGES.values():
-        texts = " ".join([lang.sentence_prefix] + [q for q, _t, _f in lang.giveaway_questions.values()])
-        for role in ("sentences", "blanked", "word"):
-            assert f"`{lang.keys[role]}" in texts, (lang.code, role)
+        assert f"`{lang.keys['sentences']}" in lang.sentence_prefix, lang.code
         assert set(lang.sentence_questions) == set(jev.SENTENCE_KEYS)
-        assert set(lang.giveaway_questions) == {"exact", "syn", "colloc"}
 
 
 def test_the_english_sentence_filter_asks_in_english():
@@ -223,19 +194,3 @@ def test_sentence_filter_is_loose_and_removes_only_the_unreadable_the_flat_and_t
     assert not jev.sentence_passes({**ok, "autonome": 0.3})
     assert not jev.sentence_passes({**ok, "image": 0.2})
     assert not jev.sentence_passes({**ok, "celebre": 0.7})
-
-
-# --- the giveaway measure (threshold calibrated on real play, 2026-09-22) ------------------
-def test_giveaway_is_the_mean_of_the_three_questions_on_the_blanked_sentence():
-    seen = []
-
-    class J:
-        def noul(self, state, questions):
-            seen.append((state, questions))
-            return {"exact": 0.9, "syn": 0.6, "colloc": 0.3}
-    assert jev.giveaway(J(), "le ____ se faisait", "silence", lang="fr") == pytest.approx(0.6)
-    assert seen[0][0] == {"phrase_a_trou": "le ____ se faisait", "mot": "silence"}
-    assert set(seen[0][1]) == {"exact", "syn", "colloc"}
-    assert jev.giveaway(J(), "the ____ fell", "rain", lang="en") == pytest.approx(0.6)
-    assert seen[1][0] == {"blanked_sentence": "the ____ fell", "word": "rain"}
-    assert seen[1][1] == jev.ENGLISH.giveaway_questions

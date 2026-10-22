@@ -1,13 +1,12 @@
-"""The two questions the curator asks TypeSafe's hosted Jev model, both calibrated on real
-play: the SENTENCE filter (`score_sentences`, `sentence_passes`: what the model should not
-have to read) and the GIVEAWAY (`giveaway`: how much a line hands a hidden word over — the
-floor under which a word is never hidden, the bar under which a hole plays hard). Jev
+"""The one question the curator asks TypeSafe's hosted Jev model, calibrated on real play:
+the SENTENCE filter (`score_sentences`, `sentence_passes`: what the model should not have to
+read). How hard a hidden word plays is the difficulty forecast's (`difficulty.py`). Jev
 orders no map: a sentence puzzle ranks by the plain static order, the words of another
 sense removed or pushed farther (generation `AGENTS.md`).
 
 ONE TEMPLATE PER LANGUAGE (#317): every question and the state keys it reads live in one
 `Language`, written in the line's own language. French is the calibrated original (its
-requests are byte-identical to the ones every threshold below was measured on); English
+requests are byte-identical to the ones the thresholds below were measured on); English
 is its twin and carries the same thresholds until English play exists to re-tune them.
 
 Stdlib only (json/urllib/threads) so the tests run with a fake judge and no network.
@@ -31,21 +30,6 @@ SENTENCE_ALONE_MIN = 0.35   # a candidate sentence must stand without its page (
                             # days: min 0.39; clears ~46 % of a novel's candidates)
 SENTENCE_IMAGE_MIN = 0.3    # ... and carry an image or a turn (published days: min 0.31)
 SENTENCE_FAMOUS_MAX = 0.6   # ... and not be a famous line (published days: max 0.5)
-GIVEAWAY_MAX = 0.45         # a hole the sentence hands over (mean of the giveaway questions). Calibrated
-                            # 2026-09-22 on 84 published holes labelled by REAL play (share of players
-                            # typing the secret within 3 guesses; "too easy" = >= 35 %, 20 holes):
-                            # AUC 0.73; at 0.45 it strikes 19 holes, 11 truly easy, 8 good ones lost
-                            # of 64 (0.5: 8 easy / 6 lost; 0.4: 11 / 13) — in curation a lost good
-                            # hole is cheap, a given-away day is not. It catches about HALF the easy
-                            # holes: the rest are not predicted by these questions
-GIVEAWAY_MIN = 0.10         # the floor: under it the line gives no path to the word, and the curator
-                            # never hides it. On the same 84 holes, the two under it (« facho », 4 % of
-                            # the players within 30 tries, and « cygne », both 0.097) played as hard as
-                            # any; English « bloated » (0.07) and « rapacity » (0.06) beat a native
-                            # speaker; the loved days' holes start at 0.127 (« mammifères »)
-GIVEAWAY_HARD = 0.20        # under it a hole plays hard: 7 of the 13 holes under it were found by fewer
-                            # than 60 % of their players, against 12 of the 71 above. The curator notes
-                            # it to its start step (curation `AGENTS.md`), never a nearer band
 
 
 class JevError(Exception):
@@ -57,20 +41,19 @@ class JevError(Exception):
 class Language:
     """Every question the judge is asked, in ONE language (#317).
 
-    The instructions name the shared-state keys (`phrases`, `phrase_a_trou`, …), so the
-    key names travel with the texts: `keys` maps each role to the name THIS language's
+    The instructions name the shared-state key (`phrases`), so the key names travel with
+    the texts: `keys` maps each role to the name THIS language's
     texts use. French is the calibrated original — byte-identical to the requests every
     threshold was measured on — and English its twin."""
     code: str
     keys: dict
     sentence_questions: dict  # {autonome, image, celebre}: (question, true, false)
     sentence_prefix: str      # .format(i=, q=)
-    giveaway_questions: dict  # {exact, syn, colloc}: (question, true, false)
 
 
 FRENCH = Language(
     code="fr",
-    keys={"sentences": "phrases", "blanked": "phrase_a_trou", "word": "mot"},
+    keys={"sentences": "phrases"},
     sentence_questions={
         "autonome": ("La phrase se comprend-elle seule, sans le texte qui l'entoure ?",
                      "On saisit la scène ou l'idée sans rien d'autre",
@@ -82,25 +65,11 @@ FRENCH = Language(
                     "Une phrase-culte qu'un lecteur reconnaît", "Une phrase ordinaire de l'œuvre"),
     },
     sentence_prefix="Pour la phrase `phrases[{i}]` : {q}",
-    giveaway_questions={
-        "exact": ("Un lecteur qui lit `phrase_a_trou` sans aucun autre indice écrirait-il spontanément "
-                  "le mot `mot` (ou une de ses formes) dans le blanc ?",
-                  "La plupart des lecteurs écriraient ce mot",
-                  "Les lecteurs écriraient autre chose, ou hésiteraient entre des mots très différents"),
-        "syn": ("Un lecteur qui lit `phrase_a_trou` sans aucun autre indice écrirait-il spontanément "
-                "le mot `mot` OU un synonyme direct de ce mot dans le blanc ?",
-                "La plupart des lecteurs écriraient ce mot ou un synonyme direct",
-                "Les lecteurs écriraient des mots d'un autre sens, ou hésiteraient entre des idées différentes"),
-        "colloc": ("Dans `phrase_a_trou`, les mots voisins du blanc forment-ils avec `mot` une expression "
-                   "figée ou une association très fréquente qui le rend presque automatique ?",
-                   "Oui, l'expression ou l'association appelle ce mot",
-                   "Non, beaucoup de mots différents iraient aussi bien"),
-    },
 )
 
 ENGLISH = Language(
     code="en",
-    keys={"sentences": "sentences", "blanked": "blanked_sentence", "word": "word"},
+    keys={"sentences": "sentences"},
     sentence_questions={
         "autonome": ("Can the sentence be understood on its own, without the text around it?",
                      "One grasps the scene or the idea with nothing else",
@@ -112,20 +81,6 @@ ENGLISH = Language(
                     "A cult line a reader recognises", "An ordinary sentence of the work"),
     },
     sentence_prefix="For the sentence `sentences[{i}]`: {q}",
-    giveaway_questions={
-        "exact": ("Would a reader who reads `blanked_sentence` with no other clue spontaneously "
-                  "write the word `word` (or one of its forms) in the blank?",
-                  "Most readers would write this word",
-                  "Readers would write something else, or hesitate between very different words"),
-        "syn": ("Would a reader who reads `blanked_sentence` with no other clue spontaneously "
-                "write the word `word` OR a direct synonym of it in the blank?",
-                "Most readers would write this word or a direct synonym",
-                "Readers would write words of another meaning, or hesitate between different ideas"),
-        "colloc": ("In `blanked_sentence`, do the words around the blank form with `word` a fixed "
-                   "expression or a very frequent association that makes it almost automatic?",
-                   "Yes, the expression or the association calls for this word",
-                   "No, many different words would fit as well"),
-    },
 )
 
 LANGUAGES = {language.code: language for language in (FRENCH, ENGLISH)}
@@ -149,7 +104,7 @@ class JevJudge:
 
     def __init__(self, api_key, model=JEV_MODEL, workers=WORKERS):
         if not api_key:
-            raise JevError("JEV_API_KEY is missing: the sentence filter and the giveaways ask "
+            raise JevError("JEV_API_KEY is missing: the sentence filter asks "
                            "TypeSafe's hosted Jev judge.")
         self.api_key, self.model, self.workers = api_key, model, workers
         self.usage = {"input_tokens": 0, "output_tokens": 0}
@@ -232,22 +187,10 @@ def sentence_passes(scores):
             and scores["celebre"] <= SENTENCE_FAMOUS_MAX)
 
 
-def giveaway(judge, blanked, word, *, lang):
-    """How strongly the sentence hands a hole over, 0..1: the mean of three yes/no
-    probabilities on the sentence with the word blanked — would a reader write it, would
-    they write it or a direct synonym, does a fixed expression call for it. One request
-    per word, the state shaped exactly as it was when GIVEAWAY_MAX was calibrated (on
-    French play; English carries it over, #317)."""
-    L = language(lang)
-    questions = L.giveaway_questions
-    probs = judge.noul({L.keys["blanked"]: blanked, L.keys["word"]: word}, questions)
-    return sum(probs[k] for k in questions) / len(questions)
-
-
 def read_api_key(env):
     """The judge's key from the environment (never a flag, never logged)."""
     key = env.get("JEV_API_KEY", "").strip()
     if not key:
-        raise JevError("JEV_API_KEY is not set in the environment: the sentence filter and the "
-                       "giveaways ask TypeSafe's Jev judge.")
+        raise JevError("JEV_API_KEY is not set in the environment: the sentence filter asks "
+                       "TypeSafe's Jev judge.")
     return key

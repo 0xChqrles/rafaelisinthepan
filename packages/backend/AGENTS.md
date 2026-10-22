@@ -160,12 +160,15 @@
       ledger.ts               the PUBLISH LEDGER (packages/generation/published.jsonl): the line
                               a sentence publish earns, the append, and `puzzle:ledger --s3`
                               (rebuild it from the bucket)
+      played.ts               the PLAY RECORD (packages/generation/played.jsonl): `puzzle:played
+                              --s3`, each closed day's on-time play as aggregates, appended
       inventory.ts            `pnpm puzzle:inventory` (#61): publish-buffer coverage, one
                               existence probe per (day, lang), local store or S3
       preview.ts              `pnpm puzzle:preview`: print a future day's preview link per
                               supported language (local secret, or SSM's with --s3)
       stack.ts                the deployed WhippinBackendStack's outputs (bucket + API
-                              distribution) and its region, for publish, ledger and inventory
+                              distribution, score table) and its region, for publish, ledger,
+                              inventory and played
       config.ts               env names + one decrypted SSM GetParameters read, and the fixed
                               `LOCAL_IP_HMAC_SECRET` local mode signs with
       index.ts                Lambda entrypoint (S3/Dynamo stores + async secret initialization)
@@ -184,6 +187,7 @@ pnpm puzzle:publish <puzzle.json> --bonus [ID] [--s3]  # a BONUS puzzle (root AG
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]  # publish-buffer coverage (#61); reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
 pnpm puzzle:preview <YYYY-MM-DD> [--s3]  # print that day's preview link per supported language (root AGENTS.md "Day preview links"); --s3 signs with the deployed secret (SSM, the operator's credentials), default with the local one
 pnpm puzzle:ledger --s3     # rebuild packages/generation/published.jsonl (gitignored — the bucket is the truth) from every sentence puzzle in the bucket; an S3 publish appends to it itself; the curator refuses to run without it
+pnpm puzzle:played --s3     # READ-ONLY on production (ask the user before each run): scan the round rows, append each closed day not yet recorded to packages/generation/played.jsonl (root AGENTS.md, the PLAY RECORD), what the curator's difficulty forecast is calibrated on
 pnpm backend:dev                # local server (puzzles + /scores + /profile + /groups + /board + /round + /history + /devices + /link + /today) on :8787; FS puzzles, in-memory scores/profiles/groups/rounds/history/devices/links, local Turnstile accept-all, and #204's link codes PRINTED to this log
 pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server with a #190 board population + a seeded group (in-memory — re-run after a restart); --group also lands eight seeds (three of them mid-round) in YOUR group
 ```

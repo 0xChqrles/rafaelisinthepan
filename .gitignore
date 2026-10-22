@@ -46,6 +46,9 @@ packages/generation/output
 # The publish LEDGER (2026-09-08): a local copy of what the bucket holds, appended by
 # `puzzle:publish --s3`, rebuilt by `puzzle:ledger --s3`. The bucket is the truth.
 packages/generation/published.jsonl
+# The PLAY RECORD: per-day aggregates of how real players did on each closed day, appended
+# by `puzzle:played --s3` from the score table's round rows. The table is the truth.
+packages/generation/played.jsonl
 
 # ── Curation shelf + run logs (issue #260) ───────────────────
 # The shelf holds the epubs to mine (copyrighted) and index.json (which books were
@@ -54,6 +57,8 @@ packages/curation/shelf
 packages/curation/runs
 # The bank: finished lines kept for a later day (curate --bank): the work's text, and spoilers.
 packages/curation/bank
+# The difficulty reads, every answer kept by its question's hash: they name the hidden words.
+packages/curation/reads.jsonl
 
 # ── Offline benchmark lab output (issue #80) ─────────────────
 # Full paid-run session records (transcripts, transport, timing, token usage) stay
