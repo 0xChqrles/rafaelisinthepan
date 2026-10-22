@@ -30,6 +30,8 @@
       llm.py                 the questions asked of Claude + JSON parsing; TASTE is read whole from
                              the `taste` skill, the practical laws from `find-sentences`, at run time;
                              the taste's seven kinds by number (`KINDS`)
+      jev.py                 the two questions asked of TypeSafe's Jev: the sentence filter and the
+                             giveaway (client, per-language templates, thresholds; stdlib, tested)
       shelf.py               LANGS, the shelves, their index, and what a language's archive already
                              holds (read off the PUBLISH LEDGER, packages/generation/published.jsonl)
       _paths.py              path wiring (generation + benchmark scripts on sys.path), shelf_dir(lang)
@@ -38,7 +40,7 @@
                              index.json (state), quotes/<file>.txt (each book's quoted lines, per
                              shelf_quotes)
     runs/                    GITIGNORED: one markdown log per run (every rejection names its rule)
-    bank/<lang>.jsonl        GITIGNORED: banked lines, read and finished but for the ranking, and the lines
+    bank/<lang>.jsonl        GITIGNORED: banked lines, read and finished but for their puzzle, and the lines
                              set aside with why (`--bank`, `--rebank`; scripts/bank.py),
     bank/<lang>.md           read here by kind (SPOILERS); `--finish <id>` makes one a candidate day
     tests/                   pytest, dependency-free (rules, sentences, epub, lyrics); the LLM never runs
@@ -54,17 +56,18 @@ pnpm curate [--lang fr|en] [--work <file on the shelf>] [--retry <shelf file | p
 #   goes by its EDITION's language), the ARCHIVE (the ledger's lines of that language) and
 #   the VECTORS (generation's `embedding_neighbors.for_lang`); the two languages share nothing
 #   (#317, user-decided 2026-09-25).
-#   Needs JEV_API_KEY in the environment (#308): the judge's sentence filter and giveaway
-#   scores, and gen_phrase — contextual by default — need it.
+#   Needs JEV_API_KEY in the environment: Jev's sentence filter and giveaway scores
+#   (`jev.py`) ask it. gen_phrase asks no judge.
 #   Picks a work BY RULE (no model call: `curate.pick_work` —
 #   off the shelf minus the archive minus index.json minus the artist cooldown, a song
 #   when no music day is within MUSIC_EVERY_DAYS = 4 or no book is left, else a book,
 #   the author never used or proposed first, then the one left longest ago, then the
 #   file name; --work forces one; --retry <shelf file> erases a previous attempt on a
 #   work — its index
-#   entry and the candidate puzzle(s) it wrote under the generation output, their judge
-#   scores included, but never a puzzle that was published (`shelf.published_drafts`, off
-#   every ledger line: a start-only correction replays its scores) — then runs on it), mines it, and — taste choosing, code stating
+#   entry and the candidate puzzle(s) it wrote under the generation output, their
+#   `.other-sense.json` sidecars included, but never a puzzle that was published
+#   (`shelf.published_drafts`, off every ledger line: its sidecar rebuilds its maps) — then
+#   runs on it), mines it, and — taste choosing, code stating
 #   facts — writes ONE candidate day under packages/generation/output/word/<lang>/... via
 #   gen_phrase, headless, the #133 form question answered by the model. Exit 0 = a
 #   candidate was written (publish it yourself), 2 = no line of the work made a day
@@ -72,37 +75,41 @@ pnpm curate [--lang fr|en] [--work <file on the shelf>] [--retry <shelf file | p
 #   from the log and stdout (a run with no day is logged in full; the puzzle file is named
 #   after its START words, so its path spoils nothing): the main log gets the player's
 #   view, the start words, the source and the path, and everything else goes to
-#   runs/<stamp>.spoilers.md — so the run can be read and the puzzle played before being
-#   spoiled (user rule 2026-09-07).
+#   runs/<stamp>.spoilers.md — and the trio's words of another sense, handed to gen_phrase,
+#   to runs/<stamp>.spoilers.other-sense.json (keyed by the hidden words) — so the run can
+#   be read and the puzzle played before being spoiled (user rule 2026-09-07).
 #   --retry <candidate puzzle.json> retries ONE SENTENCE instead (user-decided
 #   2026-09-10: one command, a work or a puzzle): the work is read off the puzzle's
-#   `source`, the file is erased (its judge scores kept and replayed for the same trio),
-#   the sentence is found again among the work's mined units for its casing; the mining,
-#   judge and shortlist are skipped, the day is chosen on that one line. A sentence the
-#   ledger holds is refused.
+#   `source`, the file and its sidecar are erased, the sentence is found again among the
+#   work's mined units for its casing; the mining, judge and shortlist are skipped, the day
+#   is chosen on that one line. A sentence the ledger holds is refused.
 pnpm curate [--lang fr|en] --bank N [--work <file>] [--blind]
 #   BANKS N works (the whole shelf, as many as asked) instead of making a day (user-decided
 #   2026-10-18: lines curated ahead, the user picks the ones to finish). Each work is mined,
 #   quote-tested, through the judge's sentence filter and shortlisted as a run does; EVERY
-#   line of its shortlist (SHORTLIST, 20) is READ (below) and finished as a day but for the
-#   ranking: its main word measured alone and two words chosen against it (`curate.prepare`,
-#   below), then its START WORDS chosen on the words' FREE static maps by the run's own
-#   start step and checks (`curate.bank_line` on an in-memory draft, `static_draft`; a word
-#   chosen against the main word that no start saves is refused and two words chosen again,
-#   within the line's COMPANION_ASKS) — and appended to bank/<lang>.jsonl with its read, the
-#   taste it was read under (`bank.taste_stamp`: the taste and find-sentences skills, hashed
-#   before the work's lines are read), its three words — the main word first, each with its
-#   role, its path and the words it runs through, its ladder when it is one of a wide kind,
-#   its facts and its start — and what it was measured at. A line SET ASIDE on the way (by
-#   its read, its giveaway, its main word, the two words against it, or its start words) is
-#   appended too, with why (`dropped`), its read, the giveaways paid and what was measured
-#   (`bank.aside`): it counts as mined and is never finished. Nothing is ranked, compared or
-#   written as a puzzle. bank/<lang>.md (`bank.render`, SPOILERS) lists the lines kept BY
-#   KIND — the taste's seven in order, then No kind — each with its id, its source, its main
-#   word and the visible words its path runs through, its ladder, the sibling warning, each
-#   of the two words chosen against it with its path, and the line as it opens with each
-#   word's start and facts (the main word in bold); then the lines set aside, each with why;
-#   then the lines waiting for `--rebank` to choose their words. The works keep the calendar's shape
+#   line of its shortlist (SHORTLIST, 20) is READ (below) and finished as a day but for its
+#   puzzle: its main word measured alone and two words chosen against it, each word's OTHER
+#   SENSE set aside (`curate.prepare`, below), then its START WORDS chosen on the words' LINE
+#   maps (`curate.line_map`: the maps its puzzle will have) by the run's own start step and
+#   checks (`curate.bank_line` on an in-memory draft, `static_draft`; a word chosen against
+#   the main word that no start saves is refused and two words chosen again, within the
+#   line's COMPANION_ASKS) — and appended to bank/<lang>.jsonl with its read, the taste it was
+#   read under (`bank.taste_stamp`: the taste and find-sentences skills, hashed before the
+#   work's lines are read), its three words — the main word first, each with its role, its
+#   path and the words it runs through, its ladder when it is one of a wide kind, its facts
+#   and its start with its rank — each word's other-sense check (`senses`: the sense the line
+#   uses, whether its map carries it, why, the words set aside) and what it was measured at.
+#   A line SET ASIDE on the way (by its read, its giveaway, its main word, the two words
+#   against it, or its start words) is appended too, with why (`dropped`), its read, the
+#   giveaways paid, what was measured and the other-sense checks asked (`bank.aside`): it
+#   counts as mined and is never finished. Nothing is compared or written as a puzzle.
+#   bank/<lang>.md (`bank.render`, SPOILERS) lists the lines kept BY KIND — the taste's seven
+#   in order, then No kind — each with its id, its source, its main word and the visible words
+#   its path runs through, its ladder, the sibling warning, each of the two words chosen
+#   against it with its path, and the line as it opens with each word's start, its rank, its
+#   facts and how many words of another sense its map lost (the main word in bold); then the
+#   lines set aside, each with why; then the lines waiting for `--rebank` (their words to
+#   choose, or their other-sense check). The works keep the calendar's shape
 #   (`curate.bank_pick`: one song per MUSIC_EVERY_DAYS works, an artist's next song once
 #   ARTIST_COOLDOWN_DAYS more works are banked, authors spread; songs held back only until
 #   the books run out), with no artist cooldown; a banked work is never mined again, by a
@@ -114,21 +121,29 @@ pnpm curate [--lang fr|en] --bank N [--work <file>] [--blind]
 #   with the spoilers; two failures in a row stop it). Exit 2 when nothing was banked.
 pnpm curate [--lang fr|en] --finish <id> [--blind]
 #   A banked line the user chose, made ONE candidate day: read against today's archive
-#   (`bank.restore`: a line set aside, one whose words were not chosen the main word first —
-#   no back-compat, `--rebank` chooses them — a published work or sentence, or a word back
-#   in its secret cooldown, is refused), then built as a run builds its chosen line
-#   (`curate.build_day`: its words checked once more on the free maps from the measures
-#   stored, the page, the ranking — paid ONCE — start words and their checks). A line found
-#   UNBUILDABLE on either map stops with why: nothing is swapped, and the ranking is never
-#   paid twice. The start step is shown each banked start with where it now stands on the
-#   ranked map (`llm.PRIOR_RULE`): kept while still a candidate of the band, unless the
-#   ranked map offers a better one. Never publishes.
+#   (`bank.restore`: a line set aside, one whose words were not chosen the main word first or
+#   carry no other-sense check (or one that does not say whether the line's sense has
+#   another: `bank.sensed`) — no back-compat, `--rebank` takes them — a published work or
+#   sentence, or a word back in its secret cooldown, is refused), then built as a run builds
+#   its chosen line (`curate.build_day`: its words checked once more on their line maps from
+#   the measures stored, the page, then each word with another sense has its whole plain map
+#   sorted — `curate.sort_senses`, about 100 Claude calls a word, a few minutes — and
+#   gen_phrase builds the sorted maps — `--other-sense` — with the starts it was banked with
+#   on the FIRST run, never chosen again unless the sorted map moved one: a banked start
+#   gen_phrase refuses (removed), or one out of its band on the written map, is re-picked
+#   there by the model; then `check_starts`' rounds on the written puzzle, since the
+#   archive's start blacklist may have moved and the agreed forms are known only now). No
+#   paid step: Jev is not asked, no JEV_API_KEY needed. A line found UNBUILDABLE stops with
+#   why, nothing swapped; so does a moved start whose band offers none, and a fact against
+#   the trio on the written map (`curate.banked_fault`, code alone), logged « rebank it ».
+#   Never publishes.
 pnpm curate [--lang fr|en] --rebank [--work <file>] [--blind]
 #   TAKES the bank's lines again under today's taste, in place (`curate.rebank_works`): every
 #   line with its giveaways stored never read, or read under another taste stamp, or read
-#   under this one and kept with words not chosen the main word first (`bank.stale`). Never
-#   reads the shelf, never asks the judge (no JEV_API_KEY needed: the giveaways and the
-#   measures are the ones stored at banking), never ranks, never runs gen_phrase. Each line is
+#   under this one and kept with words not chosen the main word first or without their
+#   other-sense check (`bank.stale`). Never reads the shelf, never asks the judge (no
+#   JEV_API_KEY needed: the giveaways and the measures are the ones stored at banking), never
+#   runs gen_phrase. Each line is
 #   parsed again, its sentence or its work published since (`--finish` refuses either), or
 #   fewer than TRIO words to hide among those judged at banking, set aside with no call; else
 #   READ (`curate.read`, one call) unless its read is today's, shown every word judged at
@@ -136,11 +151,12 @@ pnpm curate [--lang fr|en] --rebank [--work <file>] [--blind]
 #   is a lasting verdict on the line, the cooldown a fact of the day. Then its words are
 #   CHOSEN again, the main word first, as a run chooses them (`curate.anchor_gate`,
 #   `curate.choose_others`), from the words its read leaves and out of their cooldown, and
-#   its start words on the free static maps (`curate.bank_line`): no measure stored is asked
-#   again, a hole's neighbours answer only when its fragment changed. The line gains its
-#   read, the stamp (taken before the reads: a taste edited meanwhile takes them again) and
-#   its new words, or is set aside with why — its read, giveaways and measures kept either
-#   way, so a later rebank takes it again with no judge; it keeps when it was banked. A line
+#   its start words on their line maps (`curate.bank_line`): no measure nor other-sense
+#   check stored is asked again, a hole's neighbours answer only when its fragment changed.
+#   The line gains its read, the stamp (taken before the reads: a taste edited meanwhile
+#   takes them again) and its new words, or is set aside with why — its read, giveaways,
+#   measures and other-sense checks kept either way, so a later rebank takes it again with
+#   no judge; it keeps when it was banked. A line
 #   with no usable reading (`READ_ROUNDS` told back), or whose main word (or enough of its
 #   words to leave it short) is in its cooldown, or set aside after its main word passed
 #   while a word in its cooldown was left out (the words against it were chosen without
@@ -182,7 +198,9 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   but the giveaway FLOOR (`curate.floor`) and the facts `rules.trio_faults` names, by role
   (below): the BURIED, NEIGHBOURS and UNMAPPED rules and an empty start band on every hole,
   the main word handed, a word right beside the main word — and the model's own verdicts on
-  a word it chose (a mirror, a lottery). Why: replayed
+  a word it chose (a mirror, a lottery) and its other-sense verdict on a hidden word (a map
+  that barely carries the line's sense, or no verdict: `curate.sense`, user-decided
+  2026-10-21). Why: replayed
   on the 16 days the user loved, the code rules it replaces would have rejected three of
   the lines before any model saw them (`MIN_CANDIDATES`: JeanJass, NeS, Rounhaa) and five
   of the trios (the pair rules: « éleveur de [pigeons] », « le cafard de l'[homme] »),
@@ -193,17 +211,15 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   image ordering and the 600-sentence cap.
 - **The judge removes what the model should not have to read (#308, 2026-09-20); the
   model reads the rest, in reading order (2026-09-24).** `curate.judge_sentences` scores
-  every mined line with Jev (`contextual_rank.score_sentences`: stands alone / carries an
-  image or a turn / not a famous line) and drops what fails the loose `sentence_passes`
-  (thresholds in `generation/scripts/contextual_rank.py`, chosen so every published day
-  passes; about half a novel goes — lines hanging on a name or a pronoun, the flat ones).
-  No ordering, no cap: sorting by the image score favoured description, and on a big
-  book the 600-line cap left hundreds of lines unread. A run without the key dies before
-  any model call. **A rerun never pays the ranking judge twice**: `generate` replays the
-  previous run's sidecar (`--contextual-replay`) when it regenerates with the model's
-  start words, and `--retry <puzzle.json>` keeps the erased draft's scores for the same
-  trio — unless they no longer cover the map (the word tables changed since, #317): the
-  replay's refusal drops them and the judge runs again, never losing the line.
+  every mined line with Jev (`jev.score_sentences`: stands alone / carries an image or a
+  turn / not a famous line) and drops what fails the loose `sentence_passes` (thresholds in
+  `scripts/jev.py`, chosen so every published day passes; about half a novel goes — lines
+  hanging on a name or a pronoun, the flat ones). No ordering, no cap: sorting by the image
+  score favoured description, and on a big book the 600-line cap left hundreds of lines
+  unread. A run that asks Jev (`--bank`, a normal run) dies without the key before any
+  model call. Jev is asked two things and no more (`jev.py`): this sentence filter and the
+  giveaway (below), the French requests byte-identical to the calibrated ones. It orders no
+  map: a hidden word's map is its plain map with its other sense moved (below).
 - **The model shortlists with taste, then CHOOSES THE DAY AMONG FINISHED LINES**
   (user-decided 2026-10-13: a line chosen before its checks ran was hollowed out by its
   swaps, and the rest of the shortlist was never looked at). It reads every kept line,
@@ -223,27 +239,31 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   the line gives little of it, one of a wide kind) — and orders them, best day first,
   leaving out what would make no day; a line with no kind goes first only when, read aloud,
   it beats the built ones. The first is built (`curate.build_day`: its words checked once
-  more on the free maps, page, ranking, start words); when it cannot be, the next; then the
-  next lines. Only the built line pays the ranking. Every line prepared goes to the index as
-  tried.
+  more on their line maps, page, puzzle, start words); when it cannot be, the next; then the
+  next lines. Every line prepared goes to the index as tried.
 - **The words are chosen the way the user chooses them by hand (user-decided 2026-10-20:
   "once I find a good line, there's always a word I'm sure I want to pick, then I chose 2
   other words that works well with my first pick"): the MAIN word first, then two AGAINST
   it, and nothing is ever swapped.** The main word is the read's (below), named once. It is
-  measured ALONE — only its own occurrences hidden — on its free static map and refused by
-  any fact against it (`curate.anchor_gate`, `rules.trio_faults`: buried, unmapped, its
-  neighbours writing it in, most readers writing it in, the reader's word at or under
-  `HANDED_RANK` on its map, no start in its band): the line is then set aside, since the
-  main word is never swapped; one players don't say passes — the trio's one such word
-  belongs there. Then `llm.choose_companions` chooses TWO words against it — the taste,
-  whole, and the laws; the line with the main word in brackets, its kind, path, ladder and
-  notes; every word the line can hide with it, each with the starts its band offers on its
-  free static map (`curate.band_of`; a word with none is not offered); what was refused so
-  far — each with its path through 1 to 3 words of the line, whether it is the partner of a
-  visible word, whether it is one of a wide kind and its ladder, what it does when it lands;
-  or it declines (the line is set aside). An answer that is not two distinct words offered,
-  each with such a path (`curate.path_off`), is told back. Each word is then measured with
-  the three hidden (`curate.measure`) and the facts read (`rules.trio_faults`, by role). The
+  measured ALONE — only its own occurrences hidden — then its OTHER SENSE is asked (below),
+  and it is refused by any fact against it on its line map (`curate.anchor_gate`,
+  `rules.trio_faults`: buried, unmapped, its neighbours writing it in, most readers writing
+  it in, the reader's word at or under `HANDED_RANK` on its map, no start in its band): the
+  line is then set aside, since the main word is never swapped; one players don't say
+  passes — the trio's one such word belongs there. Then `llm.choose_companions` chooses TWO
+  words against it — the taste, whole, and the laws; the line with the main word in
+  brackets, its kind, path, ladder and notes; every word the line can hide with it, each
+  with the starts its band offers on its line map (`curate.band_of`): the PLAIN map for a
+  word not yet asked its other sense (a word with none is not offered; asking every word
+  offered would cost a call each, and the starts are chosen later, on the line maps); what
+  was refused so far — each with its path
+  through 1 to 3 words of the line, whether it is the partner of a visible word, whether it
+  is one of a wide kind and its ladder, what it does when it lands; or it declines (the line
+  is set aside). An answer that is not two distinct words offered, each with such a path
+  (`curate.path_off`), is told back. Each word then has its other sense asked — one whose
+  map barely carries its sense in the line, or with no verdict, is refused, the ask spent —
+  and is measured with the three hidden (`curate.measure`) and its facts read on its line map
+  (`rules.trio_faults`, by role). The
   main word passed alone: all that can now hold against it is its neighbours, cut by a word
   hidden among them, writing it in — that word is refused, never the main word nor the line.
   A fact against one of the two others — buried, unmapped, its neighbours writing it in (a
@@ -260,11 +280,70 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   included; spent, the line is set aside. There is no review of a finished trio: asked of
   every trio, the model swapped on 77% of played days, loved ones included, and picked the
   hard word no better than chance — the trio is built up front, main word first, and code
-  tells back what fails. NOTHING IS SWAPPED AFTER THE RANKING (user-decided 2026-10-20): a
-  fact found on the ranked map, or a word no start gives a path, makes the line UNBUILDABLE
-  (`curate.Unbuildable`) and it is not built — the ranking is never paid twice; only the
-  bank, before any ranking, chooses again in place of a word chosen against the main word
-  that no start saves.
+  tells back what fails. NOTHING IS SWAPPED (user-decided 2026-10-20): a fact found on the
+  written map, or a word no start gives a path, makes the line UNBUILDABLE
+  (`curate.Unbuildable`) and it is not built; only the bank's start step chooses again in
+  place of a word chosen against the main word that no start saves.
+- **Each hidden word is checked on its PLAIN static map minus the words of ANOTHER SENSE
+  than the one its line uses (user-decided 2026-10-21: "the main goal is actually to
+  eliminate irrelevant meanings of a word"), its LINE map** (`curate.line_map`; how
+  gen_phrase takes the words off: generation `AGENTS.md`); the map SHIPPED is that plain
+  map sorted whole at build (next bullet), so the written map can differ from the line map
+  — and so can a word with two dictionary entries (« marche », noun or verb): the curator's
+  walk confirms no form, gen_phrase's claims the confirmed entry's other forms too, and
+  every rank after them moves by as many. `--finish` therefore reads the trio's facts again
+  on the written map, in code (`curate.banked_fault`), and re-picks a banked start the
+  written map moved (`check_starts`). `curate.sense` asks it once per word per line, of the main word in `anchor_gate` and of
+  each word chosen against it in `choose_others` (`line["senses"]`, kept in the bank): the
+  model is shown the first `SENSE_TOP` (300) display words of the word's plain map, closest
+  first, each group once, and names those near it ONLY through another dictionary sense — a
+  homonym, a clearly different use or construction (`llm.other_sense`); while a round names
+  `SENSE_DIG` (30) or more and fewer than `SENSE_ROUNDS` (4) were asked, the next round shows
+  the first 300 words of the plain map still there once every word named so far is taken
+  off — a round naming n words brings n new words into view, not a whole new window (the
+  near words left are shown again: the second look catches what the first missed; rejected:
+  showing a later round only words never shown — on played holes the first round's misses
+  then stayed on top, « creator » for God: god 12th → 37th behind originator and guru);
+  code keeps only words of the list shown. The
+  first round also says which sense the line uses, the word's other senses, whether the
+  line's sense has another one players could mistake for it (`other`: what decides that the
+  build sorts the word's map), and EVERY round whether the map CARRIES
+  it once the words named are gone — for a figurative or euphemistic sense, the words of
+  that sense, not of the literal one it comes from. The first round that says no ends the
+  asking (the later rounds, shown a list already cleared, grow lenient), and a word whose
+  map barely carries its sense (« partir » for dying on a map of leaving: 3 of 158 played
+  holes) is refused — the main word sets the line aside, one chosen against it is refused
+  (`curate.refuse`) — and so is a word whose answer is still unusable once asked again:
+  never hidden unchecked. Every map the curator checks
+  or picks starts on is the line map — the facts, the bands, `check_words`, the start
+  step's draft (`static_draft`). The crowd and a word's own keys stay on the plain map. Why:
+  the plain order is right within one meaning (« poison »: poisonous 1st, toxic 5th, toxin
+  6th); on 158 played holes the model named other-sense neighbours on 92 and touched no
+  one-meaning word.
+- **At build, each hidden word with another sense has its WHOLE plain map SORTED by the
+  sense its line uses — keep, push farther, or remove (user-decided 2026-10-21: three cases
+  per word, « identified » for « recognized » is no miss)** (`curate.sort_senses`, at the
+  head of `generate`; a word whose `other` is false is not asked and ships plain).
+  `llm.sort_neighbours` shows the line, the sense it uses, the word's other senses and a
+  WINDOW of its plain map, closest first, and takes back the words that belong ENTIRELY to
+  another sense (REMOVE) and those that lean toward one but still share the line's
+  (FARTHER); every other word, noise included, is kept. The windows are plain-order
+  slices, so the same map always gives the same windows: the first `SORT_HEAD` (1000)
+  words in windows of `SORT_WINDOW` (50), each asked `SORT_VOTES` (3) times; the rest in
+  windows of `SORT_TAIL_WINDOW` (200), asked once; `SORT_WORKERS` (8) at a time, about 100
+  calls and two minutes a word. The vote (`curate.sense_votes`, a window asked once
+  weighing three): REMOVE on two remove votes, FARTHER on two farther votes or a remove
+  and a farther, else KEEP. A window still unusable once asked again builds nothing — never
+  shipped half sorted. Two independent runs agree on about 94% of a map's first 500 words
+  and no number of votes passes about 97%, so the verdicts are FROZEN rather than asked
+  again: `generate` hands gen_phrase the two lists (`--other-sense`,
+  `runs/<stamp>.spoilers.other-sense.json`: keyed by the trio, a spoiler, named as one, in
+  every run); gen_phrase writes them beside the puzzle (`<puzzle>.other-sense.json`,
+  `shelf.sidecar_path`), the logged command names that sidecar so it replays byte-for-byte,
+  and a draft erased takes its sidecar with it. A START banked on the line map that the
+  sorted map moved — removed (gen_phrase refuses it: the map is built without it) or out of
+  `START_BAND` — is re-picked on the written map by the model (`check_starts`, any round),
+  and a line whose band offers none is not built.
 - **Code MEASURES each chosen word and hands the facts to the choice and the notes to the
   start-word step** (`curate.measure`, each measure asked once per line, `Measures`; the
   facts `curate.hole_facts`, the notes `curate.context_note`): the READER — the user's own
@@ -290,12 +369,12 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   hold (« moucheron », « mammifères »), TWO or more made the worst days (finished by a
   median 40 % of the players, against 57 % with one and 71 % with none), so a trio holding
   two is told back (`rules.trio_faults`) and never kept; the CROWD (`rules.crowd_share`,
-  free: the word's own STATIC map, `gen_phrase.walk_secret` with no judge, built in
+  free: the word's own PLAIN static map, `gen_phrase.walk_secret`, built in
   `load_similarity`): the share of its `CROWD_N` (30) nearest groups more common in the
   corpus than it, as a note — and the BURIED rule (user-decided 2026-10-08, after
   « charnier »): a word players only half-say (would-say ≤ `BURIED_WOULD_SAY` 0.50, asked
   TWICE and averaged when the crowd is over its bar) among commoner near-words (crowd ≥
-  `BURIED_CROWD` 0.70) is refused on every hole, before the ranking is paid for. Players
+  `BURIED_CROWD` 0.70) is refused on every hole. Players
   reach the idea, circle the commoner neighbours and stall: on 126 played French holes such
   words stalled players about twice as often, rarity aside. A rare NAME passes
   (« saint-bernard », said at 0.58), a rare stand-in does not (« faux-monnayeur »,
@@ -314,15 +393,17 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   « congés », « partir », « chaussettes », and of the loved days' 48 « poche » (« dans sa ___
   une montre ») and « humain » (« le savoir ___ ») — and the UNMAPPED rule (user-decided
   2026-10-12, after « laisse », whose vector is the verb's: its map held no « chaîne »): a
-  word NONE of whose reader words (single words the vectors know) is on its free static map
-  (`rules.unmapped`; the judge only reorders the walk's groups, so the free map answers
-  before the ranking) is refused the same way — every first guess lands past the map. On the
+  word NONE of whose reader words (single words the vectors know) is on its line map
+  (`rules.unmapped`, read on the map at hand) is refused the same way — every first guess
+  lands past the map. On the
   49 played French days with a reader on file it catches « facho », « insecte »,
   « réverbères », no loved day. A word whose reader's most-likely word sits at or under
   `HANDED_RANK` (3) on its map is handed over too (`rules.map_handed`: « pou » for
   « morpion », « mourir » for « partir », both found in one or two guesses; no played day
-  had one) — read on the free map at the choice, on the ranked map at the start step: the
-  main word so handed is refused, and two words handed over (readers, or the map) are
+  had one) — read on the line map at the choice, on the written map at the start step (the
+  same map, its forms agreed; a banked line's at `--finish`): the main word so handed is
+  refused, and two words handed
+  over (readers, or the map) are
   told back (user-decided 2026-10-12, after a Desproges day solved in ten seconds); ONE easy
   word is the start step's to tune, never a duller word. And, once the map is built, where
   the reader's nearest word lands in the hole's own map (`rules.map_nearest_filler`) — past
@@ -332,7 +413,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   closer); a fact for the start step, never which start to take (the taste's call), never
   when the readers write the word itself, and never a veto (the user kept « cercueil »). A
   word players would say instead that IS this word in another form (« sauver » for
-  « sauva »: its spelling, its lemma, or a key of its own group on its free map — what
+  « sauva »: its spelling, its lemma, or a key of its own group on its plain map — what
   typing it finds, `rules.same_word`, `curate.load_similarity`'s `own`; « table » is not
   « tablée »; the coarse spelling test `is_variant` only for a word with no map — never a
   near neighbour like « faussaire », which is another word in its own group) finds the
@@ -351,7 +432,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   ledger's game day), no same-lemma twin under another slug in the line (a same-slug
   repeat is one hole per occurrence), and **the line gives a path to it** (user-decided
   2026-10-02): the judge's giveaway score at or above `GIVEAWAY_MIN` (0.10,
-  `contextual_rank.py`). Why: under it players never reason their way to the word — English
+  `jev.py`). Why: under it players never reason their way to the word — English
   « bloated » and « rapacity » beat a native speaker — and no loved day's hole sits under
   it. The words under it are logged and never shown to the model. A line with fewer than
   `TRIO` such words is set aside, and so is one whose MAIN word (the read's, below) sits
@@ -413,7 +494,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   `medium`). Opus 5.5 needs the Agent SDK >= 0.2.159 (its bundled CLI >= 2.1.280; an older
   one refuses the model). No second spelling of it here.
 - **`gen_phrase` is the only writer of a puzzle**, run headless from this package with
-  `--words` and, when it demands one, `--form` answered by the model from the sentence
+  `--words`, `--other-sense` (above) and, when it demands one, `--form` answered by the model from the sentence
   (`curate.generate` parses the #133 error's analysis list; a word with NO analysis does
   not inflect and takes `cit`, no agreement — a fact, so no question). Nothing here publishes.
 - **The START WORDS are CHOSEN by the model, never at random — the main word's first, by
@@ -432,15 +513,17 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   (`*_reduced_commonness.json`, missing = the run dies), which counts a word's
   CAPITALISED spellings, so a name — « shiva », « zeus » for « Dieu » — is not ranked
   rare; the table only ever moves a word up. The crowd keeps the lowercase reduced order
-  the buried rule was measured on). The first successful gen_phrase run only supplies the rank maps; gen_phrase then reruns
-  with `--start MOT=DEPART` per hole (#260). Before any question, the trio's facts are read
-  on the map at hand (`rules.trio_faults`: the free static map in the bank, the ranked map
-  at `--finish` and in a run — a word handed there, a word with NO candidate in its band);
-  any makes the line UNBUILDABLE, and so does a hidden word the model finds no start gives a
-  path to (`unsaveable`: none of its candidates links to it in its everyday sense, or it is
-  dead or out of reach whatever its start, user-decided 2026-10-08) — the bank chooses again
-  in place of one of the two others, before any ranking; anywhere else the line is not
-  built. A hole the answer leaves without a valid start is asked again, alone, once
+  the buried rule was measured on). In a run, the first successful gen_phrase run only
+  supplies the maps; gen_phrase then reruns with `--start MOT=DEPART` per hole (#260); a
+  banked line's starts, chosen on the line maps, go on the first run and are read again on
+  the written map in code (`--finish`, above).
+  Before any question, the trio's facts are read on the map at hand (`rules.trio_faults`:
+  the line maps in the bank's in-memory draft, the written map in a run — one map — a word
+  handed there, a word with NO candidate in its band); any makes the line UNBUILDABLE, and
+  so does a hidden word the model finds no start gives a path to (`unsaveable`: none of its
+  candidates links to it in its everyday sense, or it is dead or out of reach whatever its
+  start, user-decided 2026-10-08) — the bank's start step chooses again in place of one of
+  the two others; in a run the line is not built. A hole the answer leaves without a valid start is asked again, alone, once
   (`llm.pick_start`, its role and the line's kind, with every other hole's notes and start);
   still incomplete, the draft is refused and erased — never a random generator pick. **A
   secret/start PAIR is blacklisted for
@@ -589,14 +672,16 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   rule (`rules.unmapped`, user-decided 2026-10-12), the NEIGHBOURS rule
   (`rules.neighbourhood` + `llm.neighbours_complete`, user-decided 2026-10-13) and an empty
   start band; the main word handed (readers, or its map); a word right beside the main
-  word (`rules.adjacent`); and the model's own verdicts on a word it chose (a mirror, a
-  lottery: user-decided 2026-10-20). What holds against the three together is told back,
+  word (`rules.adjacent`); the model's own verdicts on a word it chose (a mirror, a
+  lottery: user-decided 2026-10-20); and its other-sense verdict on a hidden word (a map
+  that barely carries the line's sense, or no verdict: `curate.sense`, user-decided
+  2026-10-21). What holds against the three together is told back,
   never a veto. Don't keep a hand list of refused words: the buried rule measures any word
   (the user: "the curator will be good in 30 years with this solution").
-- Don't swap a word, and never pay the ranking twice (user-decided 2026-10-20): the main
-  word is never swapped (a fact against it sets the line aside), one of the two others is
-  chosen again only before any ranking, and a line found unbuildable on the ranked map is
-  not built (`curate.Unbuildable`).
+- Don't swap a word (user-decided 2026-10-20): the main word is never swapped (a fact
+  against it sets the line aside), one of the two others is chosen again only by the bank's
+  start step, and a line found unbuildable on its written map is not built
+  (`curate.Unbuildable`).
 - Don't write taste into code or a prompt copy; it lives in the `taste` skill.
 - Don't ask a model to PLAY the puzzle — to guess its way to a secret, count the tries or
   simulate a player (user-decided 2026-09-25): LLMs don't play like people (on real

@@ -28,12 +28,8 @@ relative to `packages/generation/` unless prefixed.
                               (existence set + shared/src/vocab.generated.json, #200)
       embedding_neighbors.py  load/vocab/matrix/cosine-rank logic; for_lang(lang) is the
                               language's object: embedding/<lang>/ paths + derived .kv cache
-      start_word.py           start/hint-word selection (shipped ranks 100-200 on every map)
+      start_word.py           start/hint-word selection (shipped ranks 100-200)
       distances.py            stdlib-only: dq quantization (#115)
-      contextual_rank.py      stdlib-only: the #308 judge boundary — Jev (TypeSafe) pass 1
-                              Score + pass 2 pairwise, word-of-the-language demotion, sidecar
-                              + replay, ONE template per language (#317); gen_phrase hands it
-                              lemmas, never tensors or HTTP
       gen_phrase.py           one sentence -> one self-contained puzzle JSON; also owns the
                               per-secret pipeline (walk_secret) both entry points share
       gen_word.py             one word -> one single-word artifact JSON (#154); imports the
@@ -48,8 +44,8 @@ relative to `packages/generation/` unless prefixed.
     output/word/<lang>/<kind>/<author>/<work>/<start1>_<start2>_<start3>.json   generated puzzles
                               filed under their source (#137), NAMED AFTER THE START WORDS (never
                               the secrets, 2026-09-07); gitignored; publish to store/S3
-    output/word/.../<s1>_<s2>_<s3>.contextual.json   the judge's scores a contextual
-                              puzzle was built from (#308): rejoué par --contextual-replay
+    output/word/.../<s1>_<s2>_<s3>.other-sense.json   the --other-sense lists the puzzle's
+                              maps were built with: passed back, it rebuilds the same puzzle
     output/single-word/<lang>/<slug>.json   generated single-word artifacts (#154);
                               gitignored; one flat directory per language
     pyproject.toml, uv.lock   Python project (uv)
@@ -294,120 +290,55 @@ Consequences that are load-bearing:
   digests; `en.forms.LICENSE` is AGID's «COPYRIGHT AND SOURCE» and VarCon's «Copyright»
   sections, verbatim.
 
-### Contextual ranks: the static walk retrieves, a hosted judge orders (#308, user-decided 2026-09-19)
+### Other-sense words: a sentence map moves another sense's words (user-decided 2026-10-21)
 
-- **The judge is the DEFAULT for a sentence puzzle (user-decided 2026-09-20 for French,
-  2026-09-25 for English, #317; no flag): the static walk is RETRIEVAL and TypeSafe's Jev
-  model the ranking engine.** `--static` is the explicit opt-out (a reference/experiment
-  map — the static tests pass it). `JEV_API_KEY` must be in the environment of every
-  generation, the curation package's subprocess included (it inherits the curator's
-  shell). **Every question is asked in the sentence's language** (`contextual_rank.
-  LANGUAGES`: one `Language` template holding the rubric, the pairwise question, the
-  filters, the sentence and giveaway questions, the word check and the state keys they
-  name): French is the calibrated original, its requests byte-identical to the ones every
-  threshold was measured on; English is its twin and carries the same thresholds until
-  English play exists to re-tune them (the issue's calibration caveat). Per hole: the walk's `TOP_K` surviving
-  groups (all 10 000, nothing cut — user-decided: the map keeps every group it scores)
-  go to the judge as LEMMAS (`lexeme_label`, the group key's lemma; a table-less
-  singleton is its surface), with the REAL sentence, the secret and the `--before` /
-  `--after` excerpt as the shared state. **Pass 1** is one independent `Score` per
-  candidate on the rubric's levels (`Language.score_levels`, 0–4); **pass 2** is a full
-  pairwise round-robin (`Choice`) over the `PAIRWISE_TOP = 200` best of pass 1 — every
-  pair once, orientation
-  seeded, a word's score is its mean win probability — whose order replaces the front,
-  its win rates mapped affinely onto the pass-1 span they replace. Then the map is
-  RE-ASSEMBLED by `build_merged_rank_map` in that order (same groups, keys closest-first
-  in the CONTEXTUAL order, so an ambiguous surface attaches to the group the shipped
-  ranking says is closer), and **`dq` is quantized from the judge's similarities**. The
-  static cosine picks the candidates and breaks exact ties — it is never blended in.
-- **The rubric is the cloze guard and the leak guard, in words** (`Language.
-  score_instructions` and `pair_instructions`, both passes alike; its version
-  `Language.rubric` rides in the sidecar — French 3, English 2): sense only,
-  grammar/agreement/substitutability excluded, a candidate's presence in the sentence or
-  its describing what the sentence does to the secret counts for nothing. **The sentence
-  (and its excerpt) only says WHICH dictionary sense** (user-decided 2026-10-13): it
-  picks between homonyms (« vol »: theft or flight) and a verb's uses (« traiter »), and a
-  word of one sense keeps it — what the sentence compares the word to, says of it or does
-  with it does not count (« les célibataires … sont les chats errants de la société »:
-  ranked as the image, « célibataire » sat at 66 in « chats »'s map and « chaton » at 101;
-  ranked as cats, 2435 and 25). A dictionary's figurative sense stays one (« partir » for
-  « mourir », « mon chat » said to a person). The rubric travels ONCE per request in the shared state
-  (≈ half the tokens of one copy per question, same order measured); the level
-  descriptions stay in each question (moving them too shifts the scale).
-- **A front label that is not a word of the puzzle's language is demoted by the JUDGE**
-  (`Language.word_question`, asked on the `PAIRWISE_TOP` front only, `LANGUAGE_MIN = 0.2`;
-  the verdicts ride in the sidecar under `french` / `english` and replay). The rubric's "not French → lowest level" line was ignored inside the
-  scoring, and the earlier CODE rule (French rank vs English rank, 2026-09-19) was
-  REPLACED on 2026-09-22 because it threw out «apparent», «suspect», «laid», «partial»,
-  «structural» — French words common in English, at the same French rank as «feeling»;
-  no lexicon separates them either (Morphalou and the hors-dico wordlist list the
-  loanwords). Asked on its own the question does: «apparent» 0.88, «laid» 0.85,
-  «suspect» 0.95 vs «retirement» 0.11, «feeling» 0.11, «desk» 0.16 (measured; «partial»
-  0.31 and «affect» 0.38 are kept). A sidecar written before this has no verdicts and
-  cannot replay: regenerate. **Unless the secret is itself a name** (user-decided
-  2026-10-12): when `NAMES_FRONT_MIN` (50) or more front labels are refused, the secret's
-  own kind is names (a brand, a person) — what a player types for it — and nothing is
-  demoted (beside « Renault » every other carmaker had landed in the map's last 1%;
-  ordinary secrets have at most 9 of 200 refused).
-- **The judge is HOSTED — the one decided exception to offline generation** (quality
-  over cost; ≈ 10 M input tokens ≈ $0.40 per puzzle at the published price, measured).
-  Consequences: `JEV_API_KEY` from the environment (never a flag, never logged); a
-  missing key, an unsupported language, a refused request or an unreachable service
-  is a HARD ERROR — **never a static fallback** (an artifact must say what built it);
-  429/529 and transport errors retry with capped backoff. **Reproducibility is the
-  SIDECAR**: `<puzzle>.contextual.json` beside the puzzle records model, rubric
-  version, sentence, excerpt, and per secret the scores and judged pairs KEYED BY
-  GROUP (two groups can share a lemma string) plus usage; `--contextual-replay
-  <sidecar>` rebuilds the same map byte-for-byte without a call (verified), so a
-  start-word or metadata correction never rescore. `--contextual-model` names the
-  judge (`jev-latest` today; pin a version there when the API offers one).
-- **ONE start band on every map, `START_BAND` = 100–200 in SHIPPED ranks**
-  (`start_word.py`): `start_band` reads the band on the rank the puzzle ships (the merge
-  walk's 0-based position + 1) and pairs each candidate with that rank — the rank the
-  curation package reads `START_BAND` on too. One band because players' guesses land as
-  close on the contextual map as on a static one (measured on real play), so a rank
-  means the same distance to a player on either; it tops out at the judge's
-  pairwise-ordered front (`PAIRWISE_TOP`), past which its order is loosest. Do not
-  reintroduce a per-map band on the "tighter near field" premise without new play
-  data. The curator uses this one band for every hole (curation `AGENTS.md`). The
-  hover preview of the interactive selector stays STATIC (browsing spends no judge
-  call); the commit step's confirmed rebuild is the one that reranks, with a
-  "quelques minutes" notice, so the band picked from is the map that ships.
-- **The same judge runs THREE PRE-FILTERS for the curator (user-decided 2026-09-20,
-  recall-checked on every published day: nothing the curator chose is removed).** A
-  filter only ever REMOVES; whatever passes is shown unchanged and the curator chooses.
-  (1) **Start band**: a candidate shown at the hole must read as correct French (English)
-  (`START_FIT_MIN = 0.5` — at 0.4 «la rutilent» passed; the band loses ≈ 20 %, mostly
-  wrong number/category, and 3/157 published picks sat just below); the random default
-  is drawn from what remains, an emptied band is offered whole with a note. (2) **Hole
-  candidates**: the selector does not offer a word whose blanking leaves the sentence
-  unreadable (`HOLE_READABLE_MIN = 0.6`; published holes: min 0.66). (3) **Shared
-  concept**: after a commit, a candidate naming one concept with a chosen secret is
-  blocked (`SAME_CONCEPT_MAX = 0.6`; published pairs: max 0.48). Off a TTY (`--words`,
-  the curation package) (2) and (3) only WARN in the report — an explicit choice is
-  the curator's. A REPLAY judge answers no yes/no question, so the filters step aside
-  under `--contextual-replay`. An explicit `--start` (what the curation package passes)
-  is judged and WARNED, never refused. **Rejected as filters**: "the context fixes the meaning"
-  (the curator deliberately picks words the context does NOT give away — published
-  holes scored LOWER than the words left out) and a register line (it scored the
-  darkest published lines lowest). A SENTENCE filter (stands alone / carries an image
-  / not a famous line — `score_sentences`, `sentence_passes`, thresholds
-  `SENTENCE_ALONE_MIN = 0.35` / `SENTENCE_IMAGE_MIN = 0.3` / `SENTENCE_FAMOUS_MAX = 0.6`)
-  passed recall on every published day and, run over one whole novel (Bukowski, 1 608
-  candidates, 2026-09-20), clears ≈ 46 % — lines hanging on a name or a pronoun, and
-  the flat ones — while its `image` score orders the rest the way a curator would (the
-  administrative letters last). The curation package uses it as a FILTER only
-  (`curate.judge_sentences`): since 2026-09-24 no ordering — the model reads every line
-  it keeps (curation `AGENTS.md`).
-- **`gen_word` stays static** — no sentence, no judge (`walk_secret(contextual=None)`).
-  The two artifacts still share every downstream rank-map rule, but no longer promise
-  the same lexical group the same neighborhood (root `AGENTS.md`).
-- Known limits, deliberately not addressed here: a plain concrete noun ranks as its
-  category (`bureau` → rooms, `pigeons` → `oiseau`) where static gave its world; word
-  families crowd the first ranks; the tail past ≈ rank 300 is tied in bands (its order
-  is the static tie-break, `dq` ≈ 0 there); the judge commits hard to ONE sense.
-  Rejected: blending static and contextual scores (the issue's rule stands), a local
-  hidden-state cosine (measured worse: lookalikes, noisy tops, prompt-fragile).
+- **A sentence puzzle ranks by the static walk; its line chooses the secret's
+  dictionary sense by MOVING the words a player reaches through ANOTHER sense of it,
+  never by reordering the rest** (`gen_phrase.build_puzzle_rank_map`, `off=` and
+  `farther=`). The static order is right for a one-meaning word (« poison »: poisonous
+  1st, toxic 5th, toxin 6th); what a line has to move is the other meaning's neighbours.
+  The curator sorts them (curation `AGENTS.md`); generation only applies the lists,
+  offline — no network, no key.
+- **Reading the lists**: each word (a display form, any case) is read the way a player
+  reaches it, by its slug on the PLAIN assembly; a word with no key, or keying the
+  secret's own group (rank 0), is IGNORED and reported. A word in both lists is removed.
+- **REMOVE** (`off`): the groups reached are dropped from `rank_lexemes`' list and the
+  map is assembled AGAIN by `build_merged_rank_map`, over the entities the plain map
+  walked and no further: they claim no key and consume no rank, and their places stay
+  EMPTY — the map ends shorter than `TOP_K`, never refilled from past the plain map
+  (every word on it was sorted; the user's call: "if at the end we have only 5k words,
+  it is what it is"). A surface they held attaches to the next group that claims it —
+  unless that group had no key before and is then SHOWN as a removed word (the same word
+  under another lexeme, which only opens once the first is gone), taken off in turn,
+  assembly after assembly; a group already on the map that gains the surface stays at its
+  own rank. A removed word is a miss.
+- **FARTHER** (`farther`): the group goes right after the plain map's group at
+  `farther_rank` of its plain rank r — `max(FARTHER_FACTOR · r, 2r + FARTHER_MIN_STEP)`,
+  3 and 5 (« identified » 14th → after the 42nd; a 1st → after the 7th) — or after the last
+  group walked when that is past the end: never a miss. Kept groups keep the plain order;
+  several pushed groups keep theirs. Why ×3: a pairwise check of where such words belong
+  among their kept neighbours put them at a median ~3.5× plain; ×10 and a per-word model
+  placement sank them far too deep.
+- **`dq`** is quantized over the groups kept, by the same formula; a pushed group takes the
+  similarity of the group it now follows (every similarity capped by the one before it),
+  so `dq` stays non-increasing. No lists = the static map, unchanged.
+- **`--other-sense FICHIER`** (requires `--words`): a JSON object `{"<secret slug>":
+  {"remove": ["word", …], "farther": ["word", …]}}` whose keys are exactly the three
+  selected secrets' slugs, each with both lists and nothing else (empty lists move
+  nothing); a missing `--words`, a missing or extra key, a missing list or a malformed
+  file dies before anything loads. Each hole's walk applies its own lists. **The sidecar**
+  `<puzzle>.other-sense.json`, written beside the puzzle, is that object (keys sorted,
+  lists as given): passed back as `--other-sense`, it rebuilds the identical puzzle; a
+  build of the same path without `--other-sense` deletes it. The preview prints its
+  path and, per secret, how many groups were removed and pushed and which words were
+  ignored. The interactive selector takes no list (it has no `--words`).
+- **`gen_word` moves nothing** (`walk_secret` with no lists): a single word has no
+  sentence, so its map is the static one; every other rank-map rule is shared.
+- **ONE start band, `START_BAND` = 100–200 in SHIPPED ranks** (`start_word.py`):
+  `start_band` reads the band on the rank the puzzle ships (the merge walk's 0-based
+  position + 1, the other sense already moved) and pairs each candidate with that
+  rank — the rank the curation package reads `START_BAND` on too. The curator uses this
+  one band for every hole (curation `AGENTS.md`).
 
 ### Generation outputs
 
@@ -497,8 +428,10 @@ Consequences that are load-bearing:
   opt out explicitly); and don't re-filter against the wordlist anywhere downstream.
 - **Don't skip the cache mtime check** in `load_vectors`.
 - **Don't inject a missing target word** into the vocab in `gen_phrase` — error out.
-- **Don't fall back to the static order when the judge fails**, and don't blend static
-  similarity into a contextual score — retrieval and tie-break only.
+- **Don't reorder a sentence map with a judge.** The line's sense is chosen by MOVING the
+  other sense's groups (removed, or pushed farther by one fixed rule); the kept words' order
+  stays the static one (rejected: Jev's rerank, which pushed « poisonous » behind toxin and
+  toxic).
 
 (Cross-package Do-NOTs — slug/fold divergence, fold/display separation, lemma-merge
 containment — live in the root `AGENTS.md`.)
@@ -574,19 +507,14 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.
 #    sentences around the line into `source.excerpt` (#270) — blanks dropped, no key
 #    without a sentence, both arrays present when there is one; --url the track page
 #    into `source.url`. Neither is asked on a TTY: an excerpt is copied, not typed.
-#    A puzzle is CONTEXTUAL BY DEFAULT (#308, en since #317): every hole is reranked by the sense the
-#    sentence gives the secret with the Jev judge (JEV_API_KEY in the environment; hard
-#    error without it, no static fallback; --static opts out for a reference map); the
-#    judge also pre-filters the hint band (a start must read as French shown in the
-#    sentence; an explicit --start is judged and only warned), and on a TTY the selector
-#    withholds words whose blanking breaks the sentence and blocks a candidate naming one
-#    concept with a chosen hole (off a TTY those two only warn). Writes
-#    <puzzle>.contextual.json beside the puzzle, which --contextual-replay FICHIER
-#    rebuilds from without a call; --contextual-model MODELE names the judge. The hint
-#    band is shipped ranks 100-200, as on a static map.
+#    --other-sense FICHIER (with --words) moves, per secret, the words of another sense:
+#    {"<secret slug>": {"remove": [...], "farther": [...]}}, one key per secret — removed
+#    off its map, or pushed to about three times their plain rank — and writes
+#    <puzzle>.other-sense.json beside the puzzle, which rebuilds the same puzzle when
+#    passed back. The hint band is shipped ranks 100-200.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
-pnpm gen:phrase "<sentence>" --lang fr --words a b c --before "…" --after "…"   # the excerpt feeds the judge too
-pnpm gen:phrase "<sentence>" --lang fr --words a b c --static   # reference map, no judge
+pnpm gen:phrase "<sentence>" --lang fr --words a b c --before "…" --after "…"   # the excerpt (#270)
+pnpm gen:phrase "<sentence>" --lang fr --words a b c --other-sense autres-sens.json   # other sense moved
 
 # 4. Generate a SINGLE-WORD artifact (#154): one word + its ranked neighborhood, no
 #    sentence — the source the onboarding tutorial's board is pruned from
@@ -613,15 +541,7 @@ output filename contains the three distinct secret slugs in sentence order.
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` / curator report window `PLAYABILITY_TOP = 150` (gen),
-  start band `START_BAND = 100–200` shipped ranks on every map (`start_word.py`),
-  `PAIRWISE_TOP = 200` / `SCORE_BATCH = 50` / `PAIR_BATCH = 40` / `NOUL_BATCH = 40` /
-  `WORKERS = 6`, filter
-  thresholds `START_FIT_MIN = 0.5` / `HOLE_READABLE_MIN = 0.6` / `SAME_CONCEPT_MAX = 0.6` /
-  `LANGUAGE_MIN = 0.2` (French-calibrated, carried over to English),
-  `GIVEAWAY_MAX = 0.45` (calibrated on real play, 2026-09-22 — a NOTE the curator shows the model with its meaning, never a strike; curation `AGENTS.md`),
-  `GIVEAWAY_MIN = 0.10` (the curator's floor: a word under it is never hidden) /
-  `GIVEAWAY_HARD = 0.20` (the curator's hard hole: a note that the line gives little of the word)
-  (`contextual_rank.py`).
+  start band `START_BAND = 100–200` shipped ranks (`start_word.py`).
   `PLAYABILITY_TOP` is a curator report window sized for a sentence hole's near field.
 - **Playability report (#135):** `build_playability_report` reads (never mutates)
   the final groups at ranks 1..`PLAYABILITY_TOP`; both `--words` and the raw-mode
@@ -679,11 +599,9 @@ output filename contains the three distinct secret slugs in sentence order.
   fresh). Non-TTY runs are unchanged.
 - **Start-word selection on the `--words` path** (`gen_phrase.choose_start`): used by
   `holes_from_words` for a hole no `--start` names (the interactive selector picks starts
-  inline instead). The default is ONE draw of the RNG `main()` seeds from `start_band` —
-  from what the judge's filter left of it on a contextual map — and the secret itself
-  when nothing qualifies, so a headless `--static` run without `--start` is reproducible;
-  a contextual run's default also rides on the live judge (its start filter, which a
-  replay skips, and its retries, which draw on the same RNG). On a TTY
+  inline instead). The default is ONE draw of the RNG `main()` seeds from `start_band`,
+  and the secret itself when nothing qualifies, so a headless run without `--start` is
+  reproducible. On a TTY
   it lists that band (numbered, each with its rank) and reads a choice — Enter keeps the
   random default, a number picks a candidate, any other word is accepted only if it is
   in that hole's rank map (matched by slug) else reprompts; non-TTY (piped/batch) runs

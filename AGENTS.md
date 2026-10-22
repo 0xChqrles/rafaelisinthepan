@@ -167,18 +167,21 @@ is applied only to the player's raw keystrokes.
   accented display form (what the front displays, not necessarily what was typed). **Rank
   semantics:** secret = `0`; nearest group = `1`; larger = farther. Alias keys share their
   group's rank.
-- **The RANKING PROVIDER may differ by artifact (#308, user-decided 2026-09-19):** a
-  single-word artifact ranks by the static embedding; a SENTENCE puzzle (BY DEFAULT: French
-  since 2026-09-20, English since #317, 2026-09-25 — each language asked in its own words;
-  `--static` opts out) keeps the static walk as retrieval and ORDERS its `TOP_K` groups by
-  the secret's dictionary sense the sentence uses — the sentence only picks WHICH sense
-  (user-decided 2026-10-13), never what it compares the word to — judged by TypeSafe's hosted Jev model (one
-  Score per candidate, then a pairwise round-robin over the front; `dq` from the judge's
-  geometry; no blend). Same groups, same keys rule, same schema — the web and the
-  backend cannot tell a contextual map from a static one, and a puzzle carries no model
-  name or score; the judge's scores live in a gitignored sidecar beside the puzzle that
-  replays byte-for-byte. The two artifacts therefore no longer promise the same lexical
-  group the same neighborhood. Rules and constants: generation `AGENTS.md`.
+- **Every map ranks by the STATIC embedding; a SENTENCE puzzle's map moves the secret's
+  OTHER senses (user-decided 2026-10-21: three cases per word — keep, push farther,
+  remove):** the static walk's order, with each word of the plain map sorted by the sense
+  the sentence uses (`gen_phrase --other-sense`; the curator asks Claude on the
+  subscription, curation `AGENTS.md`). A word near the secret ONLY through another
+  dictionary sense is REMOVED — its group never opens, claims no key and consumes no rank,
+  so it is a miss — and its place stays empty (no refill: every word on the map was
+  sorted); a word that leans toward another sense but still shares the sentence's is
+  pushed FARTHER, to about three times its plain rank, never a miss; every other word keeps
+  the plain order. The sentence only picks WHICH sense (user-decided 2026-10-13): what it
+  compares the word to never counts. Same groups rule, same schema, no model name or score
+  in the puzzle; the lists ride in a gitignored sidecar beside the puzzle
+  (`<puzzle>.other-sense.json`) that replays byte-for-byte. Rejected: reordering a sentence
+  map by a hosted judge (#308's Jev rerank — it put « poisonous » behind toxin and toxic).
+  Rules and constants: generation `AGENTS.md`.
 - **A ranked GROUP is a playable word identity (#104/#134/#146; lemma-merged ONLY in
   `gen_phrase`'s merge walk):** inflected forms of one word are one group; the consumer key is
   opaque (a `:pos` suffix names the source entry that donated it). A group is ranked by its
@@ -222,8 +225,8 @@ in `shared/src/types.ts`, pruned into `web/src/tutorial/scripts/<lang>.word.json
 
 - **Inner rank-map semantics are the sentence schema's, unchanged**, produced by the ONE
   shared per-secret pipeline (`gen_phrase.walk_secret`): merge walk, #133 confirmation,
-  donors, `TOP_K`, `dq`, collisions. Rank 0 carries no `dq`. Always the STATIC order:
-  a word has no sentence, so #308's contextual rerank never applies here.
+  donors, `TOP_K`, `dq`, collisions. Rank 0 carries no `dq`. Nothing is moved: a
+  word has no sentence, so no other sense of it is set aside.
 - **One flat `ranks`**; no `words`/`holes`/`start`/`start_rank`/`source`.
 
 ### Vocab metadata (#200/#201)

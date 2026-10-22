@@ -467,6 +467,13 @@ def test_realization_is_keyed_by_the_lexeme_never_the_surface():
     assert resolver.realize_cell("rouge:nc", "adj:f:p") == ("rouges",)
 
 
+def test_lexeme_label_reads_the_lemma_off_an_opaque_key():
+    # what the dominant-reading lookup reads a group key as
+    assert gen_phrase.lexeme_label("voler:v") == "voler"
+    assert gen_phrase.lexeme_label("chat") == "chat"
+    assert gen_phrase.lexeme_label("dog") == "dog"
+
+
 # --- 9. the secret's form is NEVER inferred (#133) --------------------------------
 
 def test_a_single_analysis_is_confirmed_never_auto_resolved(monkeypatch):
@@ -1531,7 +1538,7 @@ def test_no_lemmas_without_no_inflect_is_rejected(monkeypatch, capsys):
     monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False,
                         raising=False)
     monkeypatch.setattr(gen_phrase.sys, "argv", [
-        "gen_phrase.py", "la scie coupe le bois sec", "--lang", "fr", "--static",
+        "gen_phrase.py", "la scie coupe le bois sec", "--lang", "fr",
         "--words", "scie", "bois", "sec", "--no-lemmas"])
     with pytest.raises(SystemExit):
         gen_phrase.main()

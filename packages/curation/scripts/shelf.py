@@ -246,13 +246,15 @@ def find_unit(mined: list[str], sentence: str) -> str | None:
 
 
 def sidecar_path(puzzle_path: str) -> str:
-    """The judge's scores gen_phrase writes beside a puzzle (#308)."""
-    return puzzle_path[:-len(".json")] + ".contextual.json"
+    """The words of another sense gen_phrase writes beside a puzzle (`--other-sense`): what
+    rebuilds its maps."""
+    return puzzle_path[:-len(".json")] + ".other-sense.json"
 
 
 def erase_puzzle(path: Path) -> None:
-    """Delete one candidate puzzle under the generation output and the empty
-    directories it leaves."""
+    """Delete one candidate puzzle under the generation output, its sidecar, and the
+    empty directories they leave."""
+    Path(sidecar_path(str(path))).unlink(missing_ok=True)
     path.unlink()
     parent = path.parent
     while parent != _paths.GENERATION_OUTPUT_DIR and parent.exists() and not any(parent.iterdir()):
@@ -279,9 +281,8 @@ def forget(index: dict, work: dict, lang: str, published: set | frozenset = froz
     """Erase an attempt: the work's index entry and every candidate puzzle written for it
     under the GENERATION OUTPUT (never the store — a published day is not an attempt),
     the title compared by `title_key` (a retry on one volume keeps another volume's drafts).
-    A puzzle that WAS published (`published_drafts`) stays, with its judge's scores: a
-    start-only correction replays them instead of paying the ranking again.
-    Returns what was deleted."""
+    A puzzle that WAS published (`published_drafts`) stays, with its sidecar: a correction
+    rebuilds its maps from it. Returns what was deleted."""
     index["books"].pop(work["file"], None)
     author, title = slug(work.get("author", "")), title_key(work.get("title", ""))
     if not title:  # an untitled work would match every source-less puzzle
@@ -296,9 +297,6 @@ def forget(index: dict, work: dict, lang: str, published: set | frozenset = froz
         if slug(src.get("author", "")) == author and title_key(src.get("work", "")) == title:
             if _draft_key(puzzle) in published:
                 continue
-            # A retried WORK starts over, so the judge's scores beside it go too (a
-            # retried SENTENCE keeps them: `curate.retry_target` replays them).
-            Path(sidecar_path(str(path))).unlink(missing_ok=True)
             erase_puzzle(path)
             deleted.append(str(path))
     return deleted

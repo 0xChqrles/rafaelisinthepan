@@ -41,7 +41,7 @@ def test_start_candidates_are_the_band_minus_variants_and_elision_failures():
         "monde": {"word": "monde", "rank": 120},
         "effet": {"word": "effet", "rank": 104},
         "proche": {"word": "proche", "rank": 60},    # closer than the band
-        "loin": {"word": "loin", "rank": 300},       # the old contextual band: too far
+        "loin": {"word": "loin", "rank": 300},       # farther than the band
     }
     words = [e["word"] for e in start_candidates(ranks, "savoir", "le", exclude={"effet"}, lang="fr")]
     assert words == ["monde"]        # usage/esprit elide after « le », savoirs is a variant, proche/loin are off-band

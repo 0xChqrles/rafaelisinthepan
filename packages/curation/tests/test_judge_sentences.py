@@ -1,17 +1,20 @@
 """The curator's flow (2026-09-24): the judge's loose filter keeps reading order and the
 model reads every line left; each line is read, its main word measured alone, two words
-chosen against it, what fails told back; the day is chosen by comparison; nothing is swapped
-after the ranking; the giveaway judge is a note."""
+chosen against it, each word's other sense taken off its map, what fails told back; the day
+is chosen by comparison; nothing is swapped; the giveaway judge is a note."""
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-import _paths  # puts generation/scripts on sys.path (contextual_rank)
-import contextual_rank
+import _paths
 import curate
+import jev
 from rules import Token
+
+_OTHER_SENSE = curate.llm.other_sense   # the question itself, before any test fakes it
 
 
 class FakeJudge:
@@ -29,22 +32,28 @@ class FakeJudge:
 
 
 class Log(list):
+    stamp = "test"   # the run's files are named after it
+
     def __call__(self, line):
         self.append(line)
 
 
 @pytest.fixture(autouse=True)
 def _free_bands(monkeypatch):
-    """Every word's band on its free static map offers « <word>-start » at 150, unless a test
-    says otherwise; the neighbours answer nothing usable."""
+    """Every word's band on its map offers « <word>-start » at 150, unless a test says
+    otherwise; the neighbours answer nothing usable; a word with a map is found to have no
+    other sense, its map carrying the line's."""
     monkeypatch.setattr(curate, "band_of", lambda line, t, sims, pairs, lang: [{"word": f"{t.text}-start", "rank": 150}])
     monkeypatch.setattr(curate.llm, "neighbours_complete", lambda *_a, **_k: None)
+    monkeypatch.setattr(curate.llm, "other_sense", lambda _c, _s, _w, _words, lang, off=(): (
+        {"words": []} if off else {"used": "its one sense", "senses": ["its one sense"], "other": False, "words": [],
+                                   "carried": True, "why": ""}))
 
 
 def _giveaways(monkeypatch, scores=None):
     """Every word a line can hide is judged before the choice (the floor); a word the
     test does not name gets a path (0.3)."""
-    monkeypatch.setattr(contextual_rank, "giveaway", lambda _j, _shown, word, lang: (scores or {}).get(word, 0.3))
+    monkeypatch.setattr(jev, "giveaway", lambda _j, _shown, word, lang: (scores or {}).get(word, 0.3))
 
 
 def test_judge_sentences_removes_the_failing_and_keeps_reading_order():
@@ -129,7 +138,7 @@ def test_a_line_that_does_not_stand_alone_is_set_aside_before_its_giveaway_or_wo
     monkeypatch.setattr(curate, "parse", _line_tokens)
     monkeypatch.setattr(curate.llm, "choose_companions", lambda *_a, **_k: pytest.fail("no words for a refused line"))
     monkeypatch.setattr(curate.llm, "choose_among", lambda *_a, **_k: pytest.fail("nothing to compare"))
-    monkeypatch.setattr(contextual_rank, "giveaway", lambda *_a, **_k: pytest.fail("a line set aside pays nothing"))
+    monkeypatch.setattr(jev, "giveaway", lambda *_a, **_k: pytest.fail("a line set aside pays nothing"))
     _read(monkeypatch, _a_read(stands_alone=False, why="leans on its page"))
     monkeypatch.setattr(curate, "build_day", lambda *a, **k: pytest.fail("a refused line is never built"))
     log = Log()
@@ -212,7 +221,7 @@ def test_a_reading_told_back_read_rounds_times_sets_the_line_aside(monkeypatch):
 
 def test_the_giveaway_is_paid_after_the_read_and_never_for_a_word_that_needs_the_work(monkeypatch):
     judged = []
-    monkeypatch.setattr(contextual_rank, "giveaway", lambda _j, _shown, word, lang: judged.append(word) or 0.3)
+    monkeypatch.setattr(jev, "giveaway", lambda _j, _shown, word, lang: judged.append(word) or 0.3)
     _read(monkeypatch, _a_read(needs_book=["chat"]))
     _measured(monkeypatch)
     offered = _against(monkeypatch, {"words": None, "why": "none"})
@@ -248,8 +257,8 @@ def _day_of(words=("chat", "chien", "pierre"), *, sentence="un chat un chien une
     """A line and its three words as the start step reads them — `words`, the first the MAIN
     word, hidden in « un _ un _ une _ » — each measured plain: readers split (unless `expected`
     names the word they write; `guesses`, what else they put there), players say it, no
-    crowd, the neighbours write « autre »; each path through « un »; `ladders`, the words of a
-    wide kind."""
+    crowd, the neighbours write « autre », no word of another sense on its map; each path
+    through « un »; `ladders`, the words of a wide kind."""
     tokens = [Token(i, w, w, "NOUN" if i % 2 else "DET", w, not i % 2)
               for i, w in enumerate(["un", words[0], "un", words[1], "une", words[2]])]
     trio = tokens[1::2]
@@ -259,32 +268,241 @@ def _day_of(words=("chat", "chien", "pierre"), *, sentence="un chat un chien une
     for w in words:
         m.readings[w] = ((guesses or {}).get(w, []), (expected or {}).get(w))
         m.says[w], m.crowds[w], m.frames[w] = (0.8, None), None, [("un ___", "autre")]
+        line["senses"][w] = {"used": "its one sense", "others": [], "other": False, "carried": True, "why": "",
+                             "off": []}
     checked = curate.Checked(trio, {w: {"line": f"to {w}", "words": ["un"]} for w in words}, ladders or {},
                              {w: f"n-{w}" for w in words}, {w: [] for w in words})
     return line, checked
 
 
-def _gen(log, words=("chat", "chien", "ours"), *, sentence="s", source=None, lang="fr", replay=None):
-    """`generate` on a line hiding `words`."""
-    line, checked = _day_of(words, sentence=sentence)
+@pytest.fixture(autouse=True)
+def _runs(tmp_path, monkeypatch):
+    """The run's files (the log, the other-sense file handed to gen_phrase) go to a test directory."""
+    monkeypatch.setattr(_paths, "RUNS_DIR", tmp_path / "runs")
+
+
+def _gen(log, words=("chat", "chien", "ours"), *, sentence="s", source=None, lang="fr", line=None, prior=None):
+    """`generate` on a line hiding `words` (`line`: the line and its words, `_day_of`'s by default)."""
+    line, checked = line or _day_of(words, sentence=sentence)
     return curate.generate(object(), log, line, checked, source or {}, lang, sims=curate.Vectors(), pairs={},
-                           replay=replay)
+                           prior=prior)
 
 
-def test_a_rerun_replays_the_previous_sidecar_instead_of_paying_the_judge(monkeypatch):
+def test_gen_phrase_takes_the_words_of_another_sense_off_each_map(monkeypatch):
     seen = []
     monkeypatch.setattr(curate.subprocess, "run", lambda cmd, **_k: seen.append(cmd) or type("C", (), {"returncode": 1, "stdout": "", "stderr": ""})())
-    curate.run_gen_phrase("une phrase", ["a", "b", "c"], {}, {}, "fr", {"a": "x"},
-                          replay=curate._sidecar("/out/x_y_z.json"))
-    assert "--contextual-replay" in seen[0]
-    assert seen[0][seen[0].index("--contextual-replay") + 1] == "/out/x_y_z.contextual.json"
-    curate.run_gen_phrase("une phrase", ["a", "b", "c"], {}, {}, "fr")
-    assert "--contextual-replay" not in seen[1]
+    curate.run_gen_phrase("une phrase", ["a", "b", "c"], {}, {}, "fr", {"a": "x"}, other_sense="/runs/s.other-sense.json")
+    assert seen[0][seen[0].index("--other-sense") + 1] == "/runs/s.other-sense.json"
 
 
-def test_a_line_unbuildable_on_the_ranked_map_erases_the_draft_and_is_never_ranked_twice(tmp_path, monkeypatch):
+def test_each_word_s_sorted_map_goes_to_gen_phrase_and_the_command_logged_names_the_sidecar(tmp_path, monkeypatch):
+    line, checked = _day_of()
+    line["senses"]["chien"].update(other=True, others=["a coward"])
+    written = tmp_path / "out" / "lapin_loup_brique.json"
+    handed = []
+
+    def run(sentence, words, source, forms, lang, starts=None, other_sense=None):
+        assert Path(other_sense).name.endswith(".spoilers.other-sense.json")   # keyed by the trio: a spoiler
+        handed.append(json.loads(Path(other_sense).read_text(encoding="utf-8")))
+        return SimpleNamespace(returncode=0, stderr="", stdout=f"écrite dans {written} :"), [
+            "uv", "run", "scripts/gen_phrase.py", sentence, "--words", *words, "--other-sense", other_sense]
+
+    plain = {"chien": {"word": "chien", "rank": 0}, **{w: {"word": w, "rank": i} for i, w in
+                                                      enumerate(["chienne", "toutou", "lâche", "couard"], 1)}}
+    sorted_by = []
+    monkeypatch.setattr(curate.llm, "sort_neighbours", lambda _c, _s, word, used, others, start, words, lang: (
+        sorted_by.append((word, used, others, start, words)), {"remove": ["couard", "lâche"], "farther": ["toutou"]})[1])
+    monkeypatch.setattr(curate, "run_gen_phrase", run)
+    monkeypatch.setattr(curate, "choose_starts", lambda *_a, **_k: {"chat": "lapin", "chien": "loup", "pierre": "brique"})
+    monkeypatch.setattr(curate, "check_starts", lambda *_a, **_k: {})
+    log = Log()
+    sims = curate.Vectors(static_map=lambda t, off=frozenset(): plain if t.slug == "chien" else None)
+    assert curate.generate(object(), log, line, checked, {}, "fr", sims=sims, pairs={}) == str(written)
+    # only the word whose line's sense has another one is sorted: three votes on its one window
+    assert sorted_by == [("chien", "its one sense", ["a coward"], 0, ["chienne", "toutou", "lâche", "couard"])] * 3
+    assert handed[0] == {"chat": {"remove": [], "farther": []}, "chien": {"remove": ["lâche", "couard"], "farther": ["toutou"]},
+                         "pierre": {"remove": [], "farther": []}} and len(handed) == 2
+    assert "- the map of « chien » sorted by the sense the line uses (its one sense): 2 word(s) removed, 1 pushed " \
+           "farther (3 window(s) asked)" in log
+    command = next(entry for entry in log if entry.startswith("- gen:phrase command: "))
+    assert command.endswith(f"--other-sense {tmp_path / 'out' / 'lapin_loup_brique.other-sense.json'}`")
+
+
+def _sorting(monkeypatch, n, answer):
+    """`sort_senses` of « pierre » (another sense) on a plain map of `n` words w1..wn; every
+    window answered by `answer(start, words)`. Returns (the result, the verdict, the windows
+    asked as (start, size), the log)."""
+    line = _garden()
+    t = next(t for t in line["allowed"] if t.slug == "pierre")
+    line["senses"]["pierre"] = {"used": "a stone", "others": ["a name"], "other": True, "carried": True, "why": "",
+                                "off": []}
+    plain = {"pierre": {"word": "pierre", "rank": 0}, **{f"w{i}": {"word": f"w{i}", "rank": i} for i in range(1, n + 1)}}
+    asked = []
+    monkeypatch.setattr(curate.llm, "sort_neighbours", lambda _c, _s, _w, _u, _o, start, words, lang: (
+        asked.append((start, len(words))), answer(start, words))[1])
+    log = Log()
+    ok = curate.sort_senses(object(), log, line, [t], curate.Vectors(static_map=lambda t, off=frozenset(): plain), "fr")
+    return ok, line["senses"]["pierre"], asked, log
+
+
+def test_the_head_is_asked_three_times_in_windows_of_fifty_the_tail_once_in_windows_of_two_hundred(monkeypatch):
+    assert (curate.SORT_HEAD, curate.SORT_WINDOW, curate.SORT_VOTES, curate.SORT_TAIL_WINDOW) == (1000, 50, 3, 200)
+    ok, _v, asked, _log = _sorting(monkeypatch, 1450, lambda _s, _w: {"remove": [], "farther": []})
+    assert ok
+    head = [(s, 50) for s in range(0, 1000, 50)]
+    assert sorted(asked) == sorted(head * 3 + [(1000, 200), (1200, 200), (1400, 50)])
+
+
+def test_a_word_s_verdict_is_the_votes_of_its_windows_in_plain_order(monkeypatch):
+    votes = {}
+
+    def answer(start, words):
+        n = votes[start] = votes.get(start, 0) + 1     # the n-th vote on this window
+        if start == 0:
+            return {"remove": ["w3"] + (["w2"] if n == 1 else []) + (["w1"] if n < 3 else []),
+                    "farther": (["w2"] if n == 2 else []) + (["w4"] if n == 1 else [])}
+        return {"remove": ["w1003"], "farther": ["w1001"]}  # asked once: one vote weighs three
+    ok, verdict, _asked, _log = _sorting(monkeypatch, 1100, answer)
+    assert ok
+    assert verdict["remove"] == ["w1", "w3", "w1003"]          # two or three remove votes; the tail's one
+    assert verdict["farther"] == ["w2", "w1001"]                 # a remove and a farther; a lone farther kept w4
+
+
+def test_the_vote_rule():
+    assert curate.sense_votes([(1, {"remove": ["a", "b", "c"], "farther": ["d"]}),
+                               (1, {"remove": ["a", "b"], "farther": ["c", "e"]}),
+                               (1, {"remove": [], "farther": ["e", "f"]})]) == \
+        {"a": "remove", "b": "remove", "c": "farther", "e": "farther"}
+    assert curate.sense_votes([(3, {"remove": ["a"], "farther": ["b"]})]) == {"a": "remove", "b": "farther"}
+
+
+def test_a_word_with_no_other_sense_is_never_sorted_and_its_map_stays_plain(monkeypatch):
+    line, checked = _day_of()
+    monkeypatch.setattr(curate.llm, "sort_neighbours", lambda *_a, **_k: pytest.fail("one sense: nothing to sort"))
+    assert curate.sort_senses(object(), Log(), line, checked.trio, curate.Vectors(), "fr")
+    assert all(line["senses"][t.slug]["remove"] == line["senses"][t.slug]["farther"] == [] for t in checked.trio)
+
+
+def test_a_window_with_no_usable_answer_asked_twice_builds_nothing(monkeypatch):
+    ok, verdict, asked, log = _sorting(monkeypatch, 120, lambda start, _w: None if start == 100 else
+                                       {"remove": [], "farther": []})
+    assert not ok and "remove" not in verdict
+    assert asked.count((100, 20)) == 6                    # three votes, each asked twice
+    assert log == ["- sorting the map of « pierre »: a window had no usable answer, asked twice — the line is not built"]
+
+
+def test_a_banked_line_s_starts_go_on_the_first_run_and_are_never_chosen_again(tmp_path, monkeypatch):
+    # its starts were chosen on the line maps gen_phrase writes (`--finish`): never chosen again
+    written = _three_hole_draft(tmp_path)              # each banked start at rank 120, in its band
+    runs = []
+    monkeypatch.setattr(curate, "run_gen_phrase", lambda *a, **k: (
+        runs.append(dict(a[5])), (SimpleNamespace(returncode=0, stderr="", stdout=f"écrite dans {written} :"), []))[1])
+    monkeypatch.setattr(curate, "choose_starts", lambda *_a, **_k: pytest.fail("a banked line's starts are kept"))
+    checked_with = []
+    monkeypatch.setattr(curate, "check_starts", lambda *_a, **k: checked_with.append(_a[5]) or {})
+    banked = {"chat": "lapin", "chien": "loup", "pierre": "brique"}
+    log = Log()
+    assert _gen(log, ("chat", "chien", "pierre"), prior=banked) == str(written)
+    assert runs == [banked]                                  # one run, the banked starts on it
+    assert checked_with == [{k: {w} for k, w in banked.items()}]   # their checks still run, every start tried
+    assert "- start words as banked, on the maps they were chosen on: « lapin » for « chat », « loup » for « chien », " \
+           "« brique » for « pierre »" in log
+
+
+@pytest.mark.parametrize("moved, expected, fault", [
+    # the reader's word handed on the written map: the main word is never handed
+    ({"chat": {"lapin": {"word": "lapin", "rank": 120}, "minou": {"word": "minou", "rank": 2}}}, {"chat": "minou"},
+     "the line cannot be built: the main word « chat »: the word most readers write sits at rank 2 on its map: "
+     "found in a guess or two"),
+])
+def test_banked_starts_that_do_not_stand_on_the_written_map_are_not_built(tmp_path, monkeypatch, moved, expected,
+                                                                          fault):
+    # read in code alone, before any check: the map written is not the one the starts were banked on
+    written = _three_hole_draft(tmp_path)
+    puzzle = json.loads(written.read_text(encoding="utf-8"))
+    puzzle["ranks"].update(moved)
+    written.write_text(json.dumps(puzzle), encoding="utf-8")
+    sidecar = tmp_path / "draft.other-sense.json"
+    sidecar.write_text("{}", encoding="utf-8")
+    runs = []
+    monkeypatch.setattr(curate, "run_gen_phrase", lambda *a, **k: (
+        runs.append(1), (SimpleNamespace(returncode=0, stderr="", stdout=f"écrite dans {written} :"), []))[1])
+    monkeypatch.setattr(curate, "choose_starts", lambda *_a, **_k: pytest.fail("never chosen again"))
+    monkeypatch.setattr(curate, "check_starts", lambda *_a, **_k: pytest.fail("a line not built is not checked"))
+    log = Log()
+    line = _day_of(("chat", "chien", "pierre"), expected=expected)
+    assert _gen(log, line=line, prior={"chat": "lapin", "chien": "loup", "pierre": "brique"}) is None
+    assert len(runs) == 1 and not written.exists() and not sidecar.exists()
+    assert f"- on the written map, {fault}: not the map the line was banked on — rebank it" in log
+
+
+def test_a_banked_start_played_since_banking_is_traded_by_the_checks_not_refused(tmp_path, monkeypatch):
+    # the archive's blacklist moved: still in its band, the start is check_starts' to trade
+    written = _three_hole_draft(tmp_path)
+    puzzle = json.loads(written.read_text(encoding="utf-8"))
+    puzzle["ranks"]["chien"]["renard"] = {"word": "renard", "rank": 130}      # a start left to trade for
+    written.write_text(json.dumps(puzzle), encoding="utf-8")
+    monkeypatch.setattr(curate, "run_gen_phrase", lambda *a, **k: (
+        SimpleNamespace(returncode=0, stderr="", stdout=f"écrite dans {written} :"), []))
+    checked = []
+    monkeypatch.setattr(curate, "check_starts", lambda *_a, **_k: checked.append(1) or {})
+    line, trio = _day_of(("chat", "chien", "pierre"))
+    banked = {"chat": "lapin", "chien": "loup", "pierre": "brique"}
+    assert curate.generate(object(), Log(), line, trio, {}, "fr", sims=curate.Vectors(),
+                           pairs={"chien": {"loup"}, "chat": {"souris"}}, prior=banked) == str(written)
+    assert checked == [1]
+
+
+def test_a_banked_start_gen_phrase_refuses_is_built_without_it_and_re_picked_on_the_written_map(tmp_path, monkeypatch):
+    # the sorted map removed it: gen_phrase runs without it, and the hole gets a start of its band
+    error = ("Erreur : --start : « loup » n'est pas un mot de départ possible pour « chien » (absent du vocabulaire "
+             "du trou, ou le secret lui-même).")
+    written = _three_hole_draft(tmp_path)
+    runs = []
+
+    def run(*a, **_k):
+        runs.append(dict(a[5]))
+        if len(runs) == 1:
+            return SimpleNamespace(returncode=1, stderr=error, stdout=""), []
+        return SimpleNamespace(returncode=0, stderr="", stdout=f"écrite dans {written} :"), []
+
+    monkeypatch.setattr(curate, "run_gen_phrase", run)
+    monkeypatch.setattr(curate, "choose_starts", lambda *_a, **_k: pytest.fail("never chosen again"))
+    seen = []
+    monkeypatch.setattr(curate, "check_starts", lambda *_a, **k: seen.append(set(k["unchosen"])) or (
+        {"chien": "renard"} if len(seen) == 1 else {}))
+    log = Log()
+    banked = {"chat": "lapin", "chien": "loup", "pierre": "brique"}
+    assert _gen(log, ("chat", "chien", "pierre"), prior=banked) == str(written)
+    assert runs == [banked, {"chat": "lapin", "pierre": "brique"}, {**banked, "chien": "renard"}]
+    assert seen == [{"chien"}, set()]
+    assert "- gen:phrase refused the banked start « loup »: no word of the sorted map — re-picked on the map written" \
+        in log
+
+
+def test_a_banked_start_the_sorted_map_moved_out_of_its_band_is_re_picked_whatever_the_round(tmp_path, monkeypatch):
+    path = _generated_draft(tmp_path, ["souris", "lapin"], starts=["lapin", "loup", "brique"])
+    puzzle = json.loads(path.read_text(encoding="utf-8"))
+    puzzle["ranks"]["chien"]["loup"]["rank"] = 582
+    path.write_text(json.dumps(puzzle), encoding="utf-8")
+    asked = []
+    monkeypatch.setattr(curate.llm, "sentence_check", lambda *_a, **_k: pytest.fail("the moved start goes first"))
+    monkeypatch.setattr(curate.llm, "pick_start", _pick_one(asked, "renard"))
+    monkeypatch.setattr(curate.st, "start_candidates", lambda rank_map, key, *_a, **_k: (
+        [{"word": "renard", "rank": 150}] if key == "chien" else [{"word": w, "rank": 120} for w in rank_map]))
+    banked = {"chat": "lapin", "chien": "loup", "pierre": "brique"}
+    assert _check(path, banked=banked, last=True) == {"chien": "renard"}
+    assert asked == [("un lapin un [____] une brique", "chien", ["renard"],
+                      "its banked start stands at rank 582 on the written map, out of its band")]
+    # with no start left in its band, the line is not built
+    monkeypatch.setattr(curate.st, "start_candidates", lambda *_a, **_k: [])
+    with pytest.raises(curate.Unbuildable, match="no start left in the band of « chien »"):
+        _check(path, banked=banked)
+
+
+def test_a_line_unbuildable_on_the_written_map_erases_the_draft_and_is_not_built(tmp_path, monkeypatch):
     draft = tmp_path / "x_y_z.json"
-    sidecar = tmp_path / "x_y_z.contextual.json"
+    sidecar = tmp_path / "x_y_z.other-sense.json"
     runs = []
 
     def run(*_a, **_k):
@@ -302,12 +520,12 @@ def test_a_line_unbuildable_on_the_ranked_map_erases_the_draft_and_is_never_rank
     log = Log()
     assert _gen(log) is None
     assert not draft.exists() and not sidecar.exists() and len(runs) == 1
-    assert "- on the ranked map, the line cannot be built: « ours »: no start in its band gives it a path" in log
+    assert "- on the written map, the line cannot be built: « ours »: no start in its band gives it a path" in log
 
 
 def test_an_incomplete_start_choice_erases_the_draft(tmp_path, monkeypatch):
     draft = tmp_path / "x_y_z.json"
-    sidecar = tmp_path / "x_y_z.contextual.json"
+    sidecar = tmp_path / "x_y_z.other-sense.json"
 
     def run(*_a, **_k):
         draft.write_text("{}", encoding="utf-8")
@@ -445,7 +663,7 @@ def test_a_word_with_no_start_in_its_band_makes_the_line_unbuildable_before_any_
     ("chien", "no start in its band gives it a path: only by spelling", "chien"),
 ])
 def test_a_word_no_start_gives_a_path_makes_the_line_unbuildable(tmp_path, monkeypatch, named, why, word):
-    # the main word ends the line; one of the others the bank chooses again, before any ranking
+    # the main word ends the line; one of the others the bank's start step chooses again
     path = _three_hole_draft(tmp_path)
     monkeypatch.setattr(curate.llm, "pick_starts", lambda *_a, **_k: {"starts": {}, "unsaveable": named,
                                                                       "why": "only by spelling"})
@@ -853,7 +1071,8 @@ def test_a_stop_word_on_a_word_s_path_is_passed_over_and_left_out_of_its_path(mo
     ({"expected": {"pierre": "pierre"}}, "most readers write it straight in"),
     ({"first": lambda f: "pierre" if "la ___ froide" in f else "autre"}, "the words right around it write it in"),
     ({"says": {"pierre": 0.45}, "crowd": 0.8}, "buried"),
-    ({"unmapped": ["caillou"]}, "none of the words readers put in its blank (« caillou »)"),
+    ({"expected": {"pierre": "caillou"}, "map": {"roche": {"word": "roche", "rank": 2}}, "known": True},
+     "none of the words readers put in its blank (« caillou »)"),
     ({"expected": {"pierre": "caillou"}, "map": {"caillou": {"word": "caillou", "rank": 3}}},
      "the word most readers write sits at rank 3 on its map"),
     ({"bandless": True}, "no start word in its band"),
@@ -864,9 +1083,8 @@ def test_a_fact_against_the_main_word_sets_the_line_aside_before_any_other_word(
         monkeypatch.setattr(curate, "band_of", lambda line, t, *_a: [] if t.text == "pierre" else [{"word": "x",
                                                                                                     "rank": 150}])
     monkeypatch.setattr(curate.llm, "choose_companions", lambda *_a, **_k: pytest.fail("the main word is never swapped"))
-    sims = curate.Vectors(crowd=lambda t: facts.get("crowd"),
-                          unmapped=lambda t, fillers: facts.get("unmapped") if t.text == "pierre" else None,
-                          static_map=lambda t: facts.get("map"))
+    sims = curate.Vectors(crowd=lambda t: facts.get("crowd"), known=lambda s: bool(facts.get("known")),
+                          static_map=lambda t, off=frozenset(): facts.get("map"))
     checked, line, log = _choose(sims=sims)
     assert checked is None and line["dropped"].startswith("the main word « pierre »: ") and why in line["dropped"]
     assert any(entry.startswith("- set aside: the main word « pierre »") for entry in log)
@@ -875,8 +1093,8 @@ def test_a_fact_against_the_main_word_sets_the_line_aside_before_any_other_word(
 def test_a_main_word_players_don_t_say_passes_and_a_reader_s_word_at_rank_four_hands_nothing(monkeypatch):
     _measured(monkeypatch, says={"pierre": 0.2}, expected={"pierre": "caillou"})
     _against(monkeypatch, _two())
-    checked, _line, _log = _choose(sims=curate.Vectors(static_map=lambda t: {"caillou": {"word": "caillou",
-                                                                                         "rank": 4}}))
+    checked, _line, _log = _choose(sims=curate.Vectors(static_map=lambda t, off=frozenset(): {
+        "caillou": {"word": "caillou", "rank": 4}}))
     assert [t.text for t in checked.trio] == ["pierre", "chat", "jardin"]
     assert checked.tags["pierre"] == ["a word players don't say"]
 
@@ -1002,22 +1220,22 @@ def test_the_line_is_set_aside_once_its_asks_are_spent(monkeypatch):
     assert line["dropped"].startswith("no two words against the main word survived 3 asks (the answer must name")
 
 
-def test_a_trio_found_at_fault_before_the_ranking_is_never_ranked(monkeypatch):
-    # finishing a line: its words checked once more on the free maps, from the measures taken,
-    # and nothing is swapped — a fault there stops the line before the ranking is paid
+def test_a_trio_found_at_fault_when_checked_again_is_never_written(monkeypatch):
+    # finishing a line: its words checked once more on their maps, from the measures taken,
+    # and nothing is swapped — a fault there stops the line before its puzzle is written
     _measured(monkeypatch)
     _against(monkeypatch, _two())
     checked, line, _log = _choose()
     line["measures"].says["jardin"], line["measures"].crowds["jardin"] = (0.45, None), 0.8   # buried, now
     monkeypatch.setattr(curate.llm, "widely_known", lambda *_a, **_k: pytest.fail("no page for a line not built"))
-    monkeypatch.setattr(curate, "generate", lambda *_a, **_k: pytest.fail("never ranked"))
+    monkeypatch.setattr(curate, "generate", lambda *_a, **_k: pytest.fail("never written"))
     log = Log()
     assert curate.build_day(object(), log, line, checked, {"kind": "book"}, {"pairs": {}}, "", {}, "fr",
                             sims=curate.Vectors(crowd=lambda t: line["measures"].crowds.get(t.slug))) is None
     assert any(entry.startswith("- the line cannot be built: « jardin »: buried") for entry in log)
 
 
-def test_a_line_checked_again_before_the_ranking_asks_nothing_it_was_measured_at(monkeypatch):
+def test_a_line_checked_again_before_its_puzzle_asks_nothing_it_was_measured_at(monkeypatch):
     asked = _measured(monkeypatch)
     _against(monkeypatch, _two())
     checked, line, _log = _choose()
@@ -1036,7 +1254,7 @@ def test_a_line_checked_again_before_the_ranking_asks_nothing_it_was_measured_at
 def _free_draft(monkeypatch):
     """The draft the bank's start step reads, faked from the line: each hidden word with its
     band on its map."""
-    def draft(line, trio, static_map, lang):
+    def draft(line, trio, sims, lang):
         holes = [{"pos": t.i, "secret": {"word": t.text, "slug": t.slug}, "start": {"word": t.text, "slug": t.slug},
                   "start_rank": 0} for t in trio]
         return {"words": [t.text for t in line["tokens"]], "holes": sorted(holes, key=lambda h: h["pos"]),
@@ -1093,7 +1311,7 @@ def _day_on_the_line(monkeypatch, scores):
 def test_a_word_the_line_gives_no_path_to_is_never_offered(monkeypatch):
     # User-decided 2026-10-02: under GIVEAWAY_MIN the line leads nowhere near the word
     # (« bloated », « rapacity » beat a native speaker), so the model never sees it.
-    assert contextual_rank.GIVEAWAY_MIN == 0.10
+    assert jev.GIVEAWAY_MIN == 0.10
     offered, log = _day_on_the_line(monkeypatch, {"chat": 0.3, "dort": 0.09, "pierre": 0.10, "froide": 0.5})
     assert offered[0] == ["chat", "froide"]          # at the floor a word stays: « pierre », the main word
     assert any("no path to dort (0.09)" in line for line in log)
@@ -1173,7 +1391,7 @@ def test_a_comparison_that_declines_every_line_builds_nothing(monkeypatch):
 def test_a_hard_hole_is_told_the_line_gives_little_and_looks_in_the_same_band(monkeypatch):
     # User-decided 2026-10-08: a hole the line gives little of is told so, never sent to a
     # nearer band.
-    assert contextual_rank.GIVEAWAY_HARD == 0.20
+    assert jev.GIVEAWAY_HARD == 0.20
     _measured(monkeypatch)
     _against(monkeypatch, _two())
     checked, _line, _log = _choose(_garden(chat=0.19, jardin=0.20))
@@ -1332,55 +1550,6 @@ def test_choose_work_offers_only_what_is_neither_published_nor_mined_nor_cooling
     assert any("artist cooldown (30 days) skips: Népal" in line for line in log)
 
 
-def test_a_replay_that_covers_another_trio_is_dropped(tmp_path, monkeypatch):
-    # the same sentence and page, another trio: « loup » was scored, « ours » is asked
-    side = tmp_path / "x.contextual.json"
-    side.write_text(json.dumps({"sentence": "s", "before": [], "after": [],
-                                "holes": [{"secret": w} for w in ("chat", "chien", "loup")]}), encoding="utf-8")
-    seen = []
-    monkeypatch.setattr(curate, "run_gen_phrase",
-                        lambda *a, **k: (seen.append(k.get("replay")), (type("C", (), {"returncode": 1, "stdout": "", "stderr": "boom"})(), []))[1])
-    log = Log()
-    _gen(log, replay=str(side))
-    assert seen[0] is None and not side.exists() and any("another trio" in l for l in log)
-
-
-@pytest.mark.parametrize("change", [None, "sentence", "before", "after"])
-def test_retry_reuses_scores_only_for_unchanged_context(tmp_path, monkeypatch, change):
-    sentence = "Le chat regarde le chien et le loup."
-    words = ["chat", "chien", "loup"]
-    excerpt = {"before": ["Avant."], "after": ["Après."]}
-    sidecar = tmp_path / "draft.contextual.json"
-    sidecar.write_text(json.dumps({
-        "sentence": sentence, **excerpt,
-        "holes": [{"secret": w, "secret_label": w, "scores": {}, "pairs": {}}
-                  for w in words],
-    }), encoding="utf-8")
-    if change == "sentence":
-        sentence = "Un chat regarde le chien et le loup."
-    elif change:
-        excerpt[change] = ["Une autre page."]
-    seen = []
-    output = str(tmp_path / "new.json")
-
-    def run(sentence, words, source, forms, lang, starts, replay=None):
-        seen.append(replay)
-        if replay:
-            # Use the generator's validator: a stale replay must never reach it.
-            judge = contextual_rank.ReplayJudge(contextual_rank.load_sidecar(replay))
-            context = contextual_rank.Context(sentence, "chat", "chat",
-                                               tuple(excerpt["before"]), tuple(excerpt["after"]), lang="fr")
-            judge.score(context, [])
-        return SimpleNamespace(returncode=0, stderr="", stdout=f"écrite dans {output} :"), []
-
-    monkeypatch.setattr(curate, "run_gen_phrase", run)
-    monkeypatch.setattr(curate, "choose_starts", lambda *a, **k: None)
-    monkeypatch.setattr(curate, "check_starts", lambda *a, **k: pytest.fail("an incomplete choice is not checked"))
-    result = _gen(Log(), tuple(words), sentence=sentence, source={"excerpt": excerpt}, replay=str(sidecar))
-    assert result is None
-    assert seen == [str(sidecar) if change is None else None]
-
-
 # --- the giveaway judge, a note (calibrated on real play, 2026-09-22) --------------------
 class _Tok:
     def __init__(self, i, text):
@@ -1415,7 +1584,7 @@ def test_the_judge_is_asked_in_the_line_s_language(monkeypatch):
         seen.append(lang)
         return [{"autonome": 0.9, "image": 0.9, "celebre": 0.0} for _ in sentences]
 
-    monkeypatch.setattr(contextual_rank, "score_sentences", score)
+    monkeypatch.setattr(jev, "score_sentences", score)
     assert curate.judge_sentences(Log(), ["A line.", "Another."], "en", judge=FakeJudge({})) == ["A line.", "Another."]
     assert seen == ["en"]
 
@@ -1428,7 +1597,7 @@ def test_the_giveaway_judge_reads_an_english_line_as_written(monkeypatch):
         seen.append((blanked, word, lang))
         return 0.1
 
-    monkeypatch.setattr(contextual_rank, "giveaway", giveaway)
+    monkeypatch.setattr(jev, "giveaway", giveaway)
     toks = [Token(0, "The", "the", "DET", "the", True), Token(1, "dog", "dog", "NOUN", "dog", False, ""),
             Token(2, "'s", "'s", "PART", "s", True), Token(3, "bone", "bone", "NOUN", "bone", False, ""),
             Token(4, ".", ".", "PUNCT", "", False, "")]
@@ -1467,7 +1636,7 @@ def test_the_form_question_for_an_english_secret_is_asked_in_english(monkeypatch
              "--form leaves=n:p — ou --no-inflect pour désactiver l'accord.")
     runs = []
 
-    def run(sentence, words, source, forms, lang, starts=None, replay=None):
+    def run(sentence, words, source, forms, lang, starts=None, other_sense=None):
         runs.append(dict(forms))
         return SimpleNamespace(returncode=1, stdout="", stderr=error if len(runs) == 1 else "boom"), []
 
@@ -1493,7 +1662,7 @@ def test_a_word_with_no_analysis_takes_the_citation_form_without_a_question(monk
     # an -ly adverb, « famous »: nothing inflects, so no agreement — a fact, not a choice
     runs = []
 
-    def run(sentence, words, source, forms, lang, starts=None, replay=None):
+    def run(sentence, words, source, forms, lang, starts=None, other_sense=None):
         runs.append(dict(forms))
         stderr = _no_analysis_error("famous") if len(runs) == 1 else "boom"
         return SimpleNamespace(returncode=1, stdout="", stderr=stderr), []
@@ -1513,32 +1682,6 @@ def test_a_citation_form_refused_again_gives_the_line_up(monkeypatch):
     log = Log()
     assert _gen(log, ("famous", "man", "slept"), sentence="A famous man slept.", lang="en") is None
     assert len(runs) == 2 and any("even as cit" in line for line in log)
-
-
-def test_a_stale_replay_runs_the_judge_again_instead_of_losing_the_line(tmp_path, monkeypatch):
-    # A retried draft's saved judge scores predate a change of the word tables (#317):
-    # gen_phrase's replay refuses a group it never scored. The line is rebuilt with a
-    # fresh judge run, never given up, and the stale scores are dropped.
-    sidecar = tmp_path / "old.contextual.json"
-    sidecar.write_text(json.dumps({"sentence": "s", "before": [], "after": [],
-                                   "holes": [{"secret": w} for w in ("chat", "chien", "ours")]}),
-                       encoding="utf-8")
-    replays = []
-
-    def run(sentence, words, source, forms, lang, starts=None, replay=None):
-        replays.append(replay)
-        if replay:
-            return SimpleNamespace(returncode=1, stdout="", stderr=(
-                "Erreur : classement contextuel impossible pour « chat » : rejeu : le groupe "
-                "felin:nc n'a pas de score pour « chat »")), []
-        return SimpleNamespace(returncode=1, stdout="", stderr="boom"), []
-
-    monkeypatch.setattr(curate, "run_gen_phrase", run)
-    log = Log()
-    assert _gen(log, replay=str(sidecar)) is None  # "boom" afterwards: refused
-    assert replays == [str(sidecar), None]
-    assert not sidecar.exists()
-    assert any("the judge runs again" in line for line in log)
 
 
 # --- what the run cannot do without is checked before `--retry` erases anything ----------
@@ -1587,6 +1730,45 @@ def test_a_retry_that_cannot_run_erases_nothing_and_asks_no_model(tmp_path, monk
     assert draft.exists() and index.read_text(encoding="utf-8") == before
 
 
+@pytest.mark.parametrize("mode", [["--finish", "abcd1234"], ["--rebank"]])
+def test_finishing_or_rebanking_needs_no_jev_key(tmp_path, monkeypatch, mode):
+    # neither asks Jev: the giveaways are stored with each line, and no map is ranked
+    _attempt(tmp_path, monkeypatch)
+    ledger = tmp_path / "published.jsonl"
+    ledger.write_text("", encoding="utf-8")
+    monkeypatch.setattr(_paths, "PUBLISHED_LEDGER", ledger)
+    monkeypatch.delenv("JEV_API_KEY", raising=False)
+    monkeypatch.setattr(curate.jev, "JevJudge", lambda *_a, **_k: pytest.fail("no judge"))
+    monkeypatch.setattr(curate.llm, "validate", lambda: "max")
+    monkeypatch.setattr(curate.llm, "Claude", lambda: SimpleNamespace(calls=0))
+    monkeypatch.setattr(curate, "load_similarity", lambda lang: curate.Vectors())
+    reached = []
+    monkeypatch.setattr(curate, "finish_line", lambda *_a, **_k: reached.append("finish"))
+    monkeypatch.setattr(curate, "rebank_works", lambda *_a, **_k: reached.append("rebank") or 2)
+    monkeypatch.setattr(curate.sys, "argv", ["curate", *mode])
+    with pytest.raises(SystemExit) as stop:
+        curate.main()
+    assert stop.value.code == 2 and reached == [mode[0].lstrip("-")]
+
+
+def test_finish_builds_the_banked_line_with_its_starts_and_its_other_sense(monkeypatch):
+    entry = {"id": "abcd1234", "work": "w.epub", "starts": {"pierre": "galet"}}
+    book = {"file": "w.epub", "kind": "book", "author": "A", "title": "T"}
+    line, checked = _day_of()
+    monkeypatch.setattr(curate.bank, "load", lambda lang: [entry])
+    monkeypatch.setattr(curate.shelf_mod, "list_works", lambda _shelf: [book])
+    monkeypatch.setattr(curate.bank, "restore", lambda e, *_a: ((line, checked), None))
+    monkeypatch.setattr(curate, "read_work", lambda *_a: "")
+    built = []
+    monkeypatch.setattr(curate, "build_day", lambda _c, _l, line, _ch, *_a, **k: built.append(
+        (line["senses"], k["prior"])) or None)
+    log = curate.Log("finish")
+    curate.finish_line(object(), log, SimpleNamespace(lang="fr", finish="abcd1234"),
+                       {"works": [], "last_used": {}, "secrets": set(), "pairs": {}}, date(2026, 10, 21),
+                       {"books": {}}, lambda w: True, curate.Vectors())
+    assert built == [(line["senses"], {"pierre": "galet"})]
+
+
 # --- `--blind`: the chosen day is withheld from the log and stdout ---------------------------
 
 def _attempted(tmp_path, monkeypatch, *, blind, success):
@@ -1629,7 +1811,7 @@ def test_a_run_that_is_not_blind_holds_nothing_back(tmp_path, monkeypatch, capsy
     assert not log.spoilers.exists()
 
 
-# --- on the ranked map: a fact found there stops the line, nothing is swapped --------------
+# --- on the written map: a fact found there stops the line, nothing is swapped -------------
 
 def test_the_start_step_finds_the_line_unbuildable_when_its_map_hands_two_words_over(tmp_path, monkeypatch):
     # « pou » at rank 1 for « morpion » (2026-10-12): the reader's word at the top of the map
@@ -1644,7 +1826,7 @@ def test_the_start_step_finds_the_line_unbuildable_when_its_map_hands_two_words_
     assert raised.value.why == "the line hands over 2 of its words (chat, chien): at most one"
 
 
-def test_the_main_word_handed_on_its_ranked_map_makes_the_line_unbuildable(tmp_path, monkeypatch):
+def test_the_main_word_handed_on_its_written_map_makes_the_line_unbuildable(tmp_path, monkeypatch):
     path = _three_hole_draft(tmp_path)
     puzzle = json.loads(path.read_text(encoding="utf-8"))
     puzzle["ranks"]["chat"]["minou"] = {"word": "minou", "rank": 1}
@@ -1666,47 +1848,235 @@ def test_one_word_handed_over_on_the_map_goes_on_to_the_starts(tmp_path, monkeyp
     assert picked == {"chat": "lapin", "chien": "loup", "pierre": "brique"}
 
 
-def test_the_start_step_reads_an_in_memory_draft_and_shows_banked_starts(tmp_path, monkeypatch):
-    # A banked line is given its starts on a draft held in memory (no puzzle written), and
-    # finishing it shows each banked start with where it now stands on the ranked map.
-    draft = json.loads(_three_hole_draft(tmp_path).read_text(encoding="utf-8"))
-    draft["ranks"]["chien"]["renard"] = {"word": "renard", "rank": 40}
-    # « lapins » was banked; the ranked map shows its group, still in the band, as « lapin »
-    draft["ranks"]["chat"]["lapins"] = {"word": "lapin", "rank": 120}
-    shown = []
-    monkeypatch.setattr(curate.llm, "pick_starts", _two_of_three(shown))
-    monkeypatch.setattr(curate.llm, "pick_start", lambda *_a, **_k: "brique")
-    line, checked = _day_of()
-    picked = curate.choose_starts(object(), Log(), draft, line, checked, {}, curate.Vectors(), {}, lang="fr",
-                                  prior={"chat": "lapins", "chien": "renard", "pierre": "galet"})
-    assert picked == {"chat": "lapin", "chien": "loup", "pierre": "brique"}
-    prior = {h["slug"]: h["prior"] for h in shown}
-    assert prior == {"chat": {"banked": "lapins", "word": "lapin", "rank": 120, "candidate": True},
-                     "chien": {"banked": "renard", "word": "renard", "rank": 40, "candidate": False},
-                     "pierre": {"banked": "galet", "word": "galet", "rank": None, "candidate": False}}
+# --- each word's other sense, taken off its map (user-decided 2026-10-21) -------------------
+# "The main goal is actually to eliminate irrelevant meanings of a word": the model names the
+# nearest words of another sense, they leave the word's map, and that map is the one checked,
+# given its starts and written.
+
+_PLAIN = {"pierre": {"word": "pierre", "rank": 0},
+          **{f"w{i}": {"word": f"w{i}", "rank": i} for i in range(1, 1001)},
+          "w1s": {"word": "w1", "rank": 1}}              # a second key of the first group: shown once
 
 
-def test_a_banked_start_is_shown_to_the_start_step_with_the_rule_to_keep_it():
-    class Claude:
-        prompt = ""
+class _Senses:
+    """A fake Claude answering the other-sense question (`llm.other_sense`, the real one): the
+    n-th round names `named[n]` and says `carried[n]` (one bool: every round says it); the first
+    answers `other`; the first `bad` answers are unusable. Keeps the words each round was
+    shown."""
 
-        def json(self, prompt):
-            self.prompt = prompt
-            return {"starts": {"pierre": "brique"}, "why": ""}
+    def __init__(self, named=(), *, other=True, carried=True, bad=0):
+        self.named, self.other, self.bad = list(named), other, bad
+        self.carried = carried if isinstance(carried, list) else None
+        self.always = carried
+        self.shown = []
 
-    plain = Claude()
-    hole = {"secret": "pierre", "slug": "pierre", "role": "main", "path": {"line": "p", "words": ["la"]},
-            "ladder": None, "options": [{"word": "brique", "rank": 120}], "notes": ""}
-    curate.llm.pick_starts(plain, "une [pierre]", [hole], None, lang="fr")
-    assert "chosen before this map was ranked" not in plain.prompt and curate.llm.PRIOR_RULE not in plain.prompt
-    banked = Claude()
-    curate.llm.pick_starts(banked, "une [pierre]",
-                           [{**hole, "prior": {"banked": "galet", "word": "galet", "rank": 260, "candidate": False}}],
-                           None, lang="fr")
-    assert "chosen before this map was ranked: « galet » (rank 260 on this map, no longer a candidate" in banked.prompt
-    agreed = Claude()
-    curate.llm.pick_starts(agreed, "des [pierres]",
-                           [{**hole, "prior": {"banked": "brique", "word": "briques", "rank": 120, "candidate": True}}],
-                           None, lang="fr")
-    assert "« brique », shown here as « briques » (rank 120 on this map, still a candidate)" in agreed.prompt
-    assert curate.llm.PRIOR_RULE in banked.prompt
+    def json(self, prompt):
+        if self.bad:
+            self.bad -= 1
+            return {"words": "unreadable"}
+        listed = prompt.split("Nearest words", 1)[1].split(": ", 1)[1].split("\n", 1)[0].split(", ")
+        n = len(self.shown)
+        self.shown.append(listed)
+        words = self.named[n] if n < len(self.named) else []
+        carried = self.always if self.carried is None else self.carried[n]
+        why = "the map is all rocks" if carried else f"round {n + 1}: no rock word left"
+        if n:
+            return {"words": words, "carried": carried, "why": why}
+        return {"senses": ["a stone", "a name"], "used": "a stone", "other": self.other, "words": words,
+                "carried": carried, "why": why}
+
+
+def _sense(monkeypatch, claude, line=None, plain=_PLAIN):
+    """`curate.sense` of « pierre » on the garden line, on `plain` as its plain map. Returns
+    (the verdict, the line, the log)."""
+    monkeypatch.setattr(curate.llm, "other_sense", _OTHER_SENSE)
+    line = line or _garden()
+    log = Log()
+    t = next(t for t in line["allowed"] if t.slug == "pierre")
+    sims = curate.Vectors(static_map=lambda t, off=frozenset(): plain)
+    return curate.sense(claude, log, line, t, sims, "fr"), line, log
+
+
+def test_the_first_round_shows_the_plain_map_s_nearest_words_each_group_once_and_a_no_ends_it(monkeypatch):
+    claude = _Senses([[]], other=False)
+    verdict, line, log = _sense(monkeypatch, claude)
+    assert curate.SENSE_TOP == 300 and len(claude.shown) == 1
+    assert claude.shown[0] == [f"w{i}" for i in range(1, 301)]          # rank order, no secret, « w1 » once
+    assert verdict == {"used": "a stone", "others": ["a name"], "other": False, "carried": True,
+                       "why": "the map is all rocks", "off": []}
+    assert line["senses"]["pierre"] is verdict
+    assert log == ["- other sense of « pierre »: the line uses it as a stone; no word of another sense set aside"]
+
+
+def test_a_round_naming_few_words_ends_the_question(monkeypatch):
+    claude = _Senses([["w3", "w9"]])
+    verdict, _line, log = _sense(monkeypatch, claude)
+    assert len(claude.shown) == 1 and verdict["off"] == ["w3", "w9"]
+    assert "2 word(s) of another sense set aside (w3, w9)" in log[0]
+
+
+def test_a_round_naming_sense_dig_words_digs_one_window_deeper_up_to_sense_rounds(monkeypatch):
+    assert (curate.SENSE_DIG, curate.SENSE_ROUNDS) == (30, 4)
+    rounds = [[f"w{i}" for i in range(1 + 30 * n, 31 + 30 * n)] for n in range(5)]   # 30 a round, the first ones
+    claude = _Senses(rounds)
+    verdict, _line, log = _sense(monkeypatch, claude)
+    assert len(claude.shown) == 4                                      # never a fifth round
+    assert claude.shown[1][:2] == ["w31", "w32"] and len(claude.shown[1]) == 300   # the words named taken off
+    assert verdict["off"] == [f"w{i}" for i in range(1, 121)]
+    assert "120 word(s) of another sense set aside (w1, w2, w3, w4, w5, …)" in log[0]
+    # one word short of the bar: no deeper round
+    claude = _Senses([rounds[0][:29]])
+    assert _sense(monkeypatch, claude)[0]["off"] == rounds[0][:29] and len(claude.shown) == 1
+
+
+def test_the_first_round_that_finds_the_line_s_sense_barely_on_the_map_ends_it_not_carried(monkeypatch):
+    # « partir » for dying: the later rounds, shown a list already cleared, passed it "though
+    # mourir and décéder are absent" — the first no stands, and nothing is asked after it.
+    rounds = [[f"w{i}" for i in range(1 + 30 * n, 31 + 30 * n)] for n in range(4)]
+    claude = _Senses(rounds, carried=[True, False, True, True])
+    verdict, _line, log = _sense(monkeypatch, claude)
+    assert len(claude.shown) == 2
+    assert verdict == {"used": "a stone", "others": ["a name"], "other": True, "carried": False,
+                       "why": "round 2: no rock word left", "off": [f"w{i}" for i in range(1, 61)]}
+    assert log[0].endswith(" — its map barely carries that sense")
+    claude = _Senses(rounds, carried=[False, True, True, True])
+    assert _sense(monkeypatch, claude)[0]["carried"] is False and len(claude.shown) == 1
+
+
+def test_words_the_round_did_not_show_are_never_set_aside(monkeypatch):
+    claude = _Senses([["w1", "caillou", "w400", "W2", "w1"]])
+    verdict, _line, _log = _sense(monkeypatch, claude)
+    assert verdict["off"] == ["w1", "w2"]
+
+
+def test_a_word_s_other_sense_is_asked_once_per_line(monkeypatch):
+    claude = _Senses([["w3"]])
+    verdict, line, _log = _sense(monkeypatch, claude)
+    again, _line, log = _sense(monkeypatch, claude, line)
+    assert again is verdict and len(claude.shown) == 1 and log == []
+
+
+def test_an_unusable_answer_is_asked_once_more_then_no_verdict(monkeypatch):
+    claude = _Senses([["w3"]], bad=1)
+    assert _sense(monkeypatch, claude)[0]["off"] == ["w3"]
+    claude = _Senses([["w3"]], bad=2)
+    verdict, line, log = _sense(monkeypatch, claude)
+    assert verdict is None and "pierre" not in line["senses"] and claude.shown == []
+    assert log == ["- other sense of « pierre »: no usable answer, asked twice"]
+
+
+def test_a_word_with_no_plain_map_is_not_asked(monkeypatch):
+    claude = _Senses()
+    verdict, line, _log = _sense(monkeypatch, claude, plain=None)
+    assert verdict["off"] == [] and verdict["carried"] and claude.shown == [] and line["senses"] == {}
+
+
+def _off_maps(seen, plain):
+    """Vectors whose static map is `plain` with the keys of the words `off` taken off, each call
+    kept in `seen` as (word, off)."""
+    def static_map(t, off=frozenset()):
+        seen.append((t.text, frozenset(off)))
+        return {k: e for k, e in plain.items() if e["word"] not in off}
+    return curate.Vectors(static_map=static_map)
+
+
+def _answers(monkeypatch, **by_word):
+    """The other-sense question answered per hidden word: {word: (words named, carried)}; any
+    other word has no other sense."""
+    asked = []
+
+    def answer(_c, _s, word, _words, lang, off=()):
+        asked.append(word)
+        named, carried = by_word.get(word, ([], True))
+        return {"used": f"{word}, as the line has it", "senses": [f"{word}, as the line has it"], "other": bool(named),
+                "words": named, "carried": carried, "why": "too far from its map"}
+    monkeypatch.setattr(curate.llm, "other_sense", answer)
+    return asked
+
+
+def test_a_main_word_whose_map_barely_carries_its_sense_in_the_line_sets_the_line_aside(monkeypatch):
+    # « partir » for dying on a map of leaving: no start leads a player there
+    _measured(monkeypatch)
+    _answers(monkeypatch, pierre=([], False))
+    monkeypatch.setattr(curate.llm, "choose_companions", lambda *_a, **_k: pytest.fail("the line is set aside"))
+    checked, line, log = _choose(sims=_off_maps([], _PLAIN))
+    assert checked is None and line["dropped"] == ("the main word « pierre »: the line uses it as pierre, as the line "
+                                                   "has it, a sense its map barely carries — too far from its map")
+
+
+def test_a_main_word_with_no_other_sense_verdict_is_never_hidden_unchecked(monkeypatch):
+    _measured(monkeypatch)
+    monkeypatch.setattr(curate.llm, "other_sense", lambda *_a, **_k: None)
+    monkeypatch.setattr(curate.llm, "choose_companions", lambda *_a, **_k: pytest.fail("the line is set aside"))
+    checked, line, _log = _choose(sims=_off_maps([], _PLAIN))
+    assert checked is None and line["dropped"] == ("the main word « pierre »: no verdict on the sense the line uses "
+                                                   "it in (no usable answer, asked twice)")
+
+
+def test_the_main_word_s_facts_are_read_on_its_map_without_its_other_sense(monkeypatch):
+    # the reader's « caillou » at rank 2 hands « pierre » over on the plain map; named as
+    # another sense, it leaves the map, and the main word passes
+    plain = {"pierre": {"word": "pierre", "rank": 0}, "roc": {"word": "roc", "rank": 1},
+             "caillou": {"word": "caillou", "rank": 2}, "galet": {"word": "galet", "rank": 3}}
+    _measured(monkeypatch, expected={"pierre": "caillou"})
+    _against(monkeypatch, _two())
+    seen = []
+    _answers(monkeypatch, pierre=(["caillou"], True))
+    checked, line, _log = _choose(sims=_off_maps(seen, plain))
+    assert [t.text for t in checked.trio] == ["pierre", "chat", "jardin"]
+    assert ("pierre", frozenset({"caillou"})) in seen
+    assert line["senses"]["pierre"]["off"] == ["caillou"]
+
+
+def test_on_its_plain_map_the_same_main_word_is_handed_over(monkeypatch):
+    plain = {"pierre": {"word": "pierre", "rank": 0}, "caillou": {"word": "caillou", "rank": 2}}
+    _measured(monkeypatch, expected={"pierre": "caillou"})
+    _answers(monkeypatch)
+    checked, line, _log = _choose(sims=_off_maps([], plain))
+    assert checked is None and "the word most readers write sits at rank 2 on its map" in line["dropped"]
+
+
+def test_a_word_chosen_against_the_main_word_whose_map_barely_carries_its_sense_is_refused(monkeypatch):
+    _measured(monkeypatch)
+    offered = _against(monkeypatch, _two(), _two("dort", "jardin"))
+    asked = _answers(monkeypatch, chat=([], False))
+    checked, line, log = _choose(sims=_off_maps([], _PLAIN))
+    assert [t.text for t in checked.trio] == ["pierre", "dort", "jardin"] and line["asks"] == 2
+    assert offered[1]["refused"] == ["« chat »: the line uses it as chat, as the line has it, a sense its map barely "
+                                     "carries — too far from its map"]
+    assert "chat" not in offered[1]["pool"]
+    assert asked == ["pierre", "chat", "jardin", "dort"]                 # each word asked once
+    assert set(line["senses"]) == {"pierre", "chat", "jardin", "dort"}
+
+
+def test_the_trio_s_facts_and_its_check_before_writing_read_each_word_s_line_map(monkeypatch):
+    _measured(monkeypatch)
+    _against(monkeypatch, _two())
+    _answers(monkeypatch, jardin=(["w7"], True))
+    seen = []
+    sims = _off_maps(seen, _PLAIN)
+    checked, line, _log = _choose(sims=sims)
+    assert ("jardin", frozenset({"w7"})) in seen and ("chat", frozenset()) in seen
+    seen.clear()
+    curate.check_words(object(), Log(), line, checked, sims, {}, "fr")
+    assert sorted(seen) == [("chat", frozenset()), ("jardin", frozenset({"w7"})), ("pierre", frozenset())]
+    # a word offered, never chosen, is read on its plain map
+    assert curate.line_map(line, next(t for t in line["allowed"] if t.slug == "dort"), sims) == _PLAIN
+
+
+def test_the_start_step_s_draft_holds_each_word_s_line_map(monkeypatch):
+    import sys
+    fake = SimpleNamespace(CONFIG={"fr": {}}, display_tokens=str.split,
+                           locate_core=lambda token, s, cfg: (token, "", "") if token == s else None,
+                           _make_hole=lambda core, prefix, suffix, pos, start, rank: {
+                               "pos": pos, "secret": {"word": core, "slug": core}})
+    monkeypatch.setitem(sys.modules, "gen_phrase", fake)
+    line = _garden()
+    line["sentence"] = "le chat dort sur la pierre froide du jardin"
+    line["senses"] = {"pierre": {"used": "a stone", "carried": True, "why": "", "off": ["w1", "w2"]}}
+    pierre = next(t for t in line["allowed"] if t.slug == "pierre")
+    draft = curate.static_draft(line, [pierre], _off_maps([], _PLAIN), "fr")
+    assert draft["holes"] == [{"pos": 5, "secret": {"word": "pierre", "slug": "pierre"}}]
+    assert "w1" not in draft["ranks"]["pierre"] and "w1s" not in draft["ranks"]["pierre"]
+    assert draft["ranks"]["pierre"]["w3"] == {"word": "w3", "rank": 3}
+
