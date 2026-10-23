@@ -776,6 +776,19 @@ def test_start_words_the_sentence_check_passes_are_kept(tmp_path, monkeypatch):
 _ALL_JUDGED = {"lapin", "loup", "brique"}
 
 
+def test_a_re_picked_start_has_its_first_idea_asked_whatever_its_word(tmp_path, monkeypatch):
+    # User-decided 2026-10-23: « panel », re-picked for « pourcentage » (neither the main word nor
+    # one of a wide kind) once the sorted map moved its banked start, sent players around the
+    # poll's sample. A start chosen again alone is asked; one chosen with the day is not.
+    path = _generated_draft(tmp_path, ["lapin", "souris"], starts=["lapin", "loup", "brique"])
+    ideas = []
+    monkeypatch.setattr(curate.llm, "sentence_check", lambda *_a, **_k: {"valid": True, "faulty": {}})
+    monkeypatch.setattr(curate.llm, "start_ideas", lambda _c, _shown, starts, lang: ideas.append(starts)
+                        or ({}, {s["start"] for s in starts}))
+    assert _check(path, tried={"chien": {"renard", "loup"}, "pierre": {"brique"}}) == {}
+    assert ideas == [[{"start": "lapin", "secret": "chat"}, {"start": "loup", "secret": "chien"}]]
+
+
 def test_a_riddle_start_is_re_picked_with_its_reason(tmp_path, monkeypatch):
     # The user's reading (2026-10-14): a start carries ONE idea its hidden word shares, its
     # first one — « berceau » for « cercueil » shared only a side meaning.

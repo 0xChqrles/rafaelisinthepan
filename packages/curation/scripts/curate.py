@@ -591,8 +591,9 @@ def check_starts(claude: llm.Claude, log: Log, path, line: dict, checked: "Check
     model takes. Then a start this secret was already
     played with (`pairs`), then the model reading the sentence (`llm.sentence_check`:
     correct, and still meaning something), then — once it reads right — the FIRST idea in the
-    sentence of the main word's start and of the start of each word of a wide kind
-    (`llm.start_ideas`: one its hidden word shares, or a riddle). Returns
+    sentence of the main word's start, of the start of each word of a wide kind and of every
+    start re-picked (`tried` holds more than one for its hole) (`llm.start_ideas`: one its
+    hidden word shares, or a riddle). Returns
     {secret slug: new start} for every faulty hole (empty = all good, or nothing better
     to offer). `tried` holds every start a hole has shown so far; none is offered again.
     `cleared` (secret slug -> starts, kept across rounds) holds the starts the idea check
@@ -631,8 +632,12 @@ def check_starts(claude: llm.Claude, log: Log, path, line: dict, checked: "Check
             # whose start must name a smaller family (user-decided 2026-10-20) — not of every
             # hole: asked of every hole of the user's loved days, the check called 17 of their
             # 57 starts riddles.
+            # And of every start RE-PICKED here (user-decided 2026-10-23): « panel », re-picked
+            # for « pourcentage » once the sorted map moved its banked start, led players into
+            # the poll's sample and never to a share — a start chosen alone, late, is one the
+            # day's choice never weighed.
             asked = {key: h for key, h in by_secret.items()
-                     if (key == checked.trio[0].slug or key in checked.ladders)
+                     if (key == checked.trio[0].slug or key in checked.ladders or len(tried.get(key, ())) > 1)
                      and h["start"]["word"] not in cleared.get(key, ())}
             riddles, judged = (llm.start_ideas(claude, shown, [{"start": h["start"]["word"], "secret": h["secret"]["word"]}
                                                                for h in asked.values()], lang=lang)

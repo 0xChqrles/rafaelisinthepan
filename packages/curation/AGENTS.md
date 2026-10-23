@@ -577,14 +577,17 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   meaningless one is refused. Once the sentence reads right, `llm.start_ideas` asks, for
   the main word's start and the start of each word of a wide kind (user-decided
   2026-10-20: the main word's path is the day's, and a wide word's start must name a
-  smaller family), the FIRST idea it brings where it stands and whether its hidden word
-  shares it — the taste's
+  smaller family), and for every start RE-PICKED by the start step (user-decided
+  2026-10-23: « panel », re-picked for « pourcentage » once the sorted map moved its
+  banked start, sent the user's round around the poll's sample and never to a share), the
+  FIRST idea it brings where it stands and whether its hidden word shares it — the taste's
   `### One idea, the start's first one`, quoted (user-decided 2026-10-14, the user's own
   reading: « fracas » carries noise like « rugissements »; « berceau » for « cercueil »
   shared only a vague side meaning, its stronger ideas led away, and the user's round
   made no progress at all); a RIDDLE start is re-picked, never sets a line aside. Not of
   every hole: asked of every hole of the user's loved days, the check called 17 of their 57
-  starts riddles, and the picks still read the rule in the taste. A start the check passed
+  starts riddles, and the day's own picks still read the rule in the taste; a start chosen
+  again alone, late, is one the day's choice never weighed. A start the check passed
   is never asked again (`cleared`, kept across rounds); a
   start the answer gives no verdict for refuses nothing and is logged as left to the
   reviewer, never as a pass; and on the last round (`START_ROUNDS`) a riddle is logged for
@@ -671,9 +674,10 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   it; root `AGENTS.md`; user-decided 2026-09-08, superseding the generation output of
   2026-09-07):
   works, secrets in their cooldown (judged on the game DAY the line names), the permanent
-  secret/start pairs, sentences, the artist cooldown's dates. A day published twice keeps
-  its last line for secrets, sentence and work — but its PAIRS come off every line, the
-  corrected day's earlier start included (it was played until the correction). Neither the generation output (what `forget` erases: attempts) nor the
+  secret/start pairs, sentences, the artist cooldown's dates — off EVERY line, a corrected
+  day's earlier version included (user-decided 2026-10-23: it was played until the
+  correction — 2026-10-22 en stood eleven hours, and its book came back as a candidate the
+  next day once only the last line counted). Neither the generation output (what `forget` erases: attempts) nor the
   backend's local store (a test bed) is ever read for the archive.
 - **Never the same BOOK twice** (`shelf.in_archive`, a shelf work against the archive's
   works): titles compare by `shelf.title_key` (each word folded by `slug` without its

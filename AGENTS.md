@@ -49,8 +49,8 @@ GITIGNORED — the BUCKET is the truth and the file its local,
 readable copy, rebuilt on any machine by `pnpm puzzle:ledger --s3` — and the ONE record
 the curator's archive (secret cooldown, secret/start pair blacklist, works, sentences,
 artist cooldown) reads; it reads nothing else, and refuses to run without the file.
-Written by `backend/src/ledger.ts`, read by `curation/scripts/shelf.py`; a corrected day
-keeps its last line.** **`packages/generation/played.jsonl` is the PLAY RECORD
+Written by `backend/src/ledger.ts`, read by `curation/scripts/shelf.py`; every line of a
+corrected day counts there (its earlier version was played until the correction).** **`packages/generation/played.jsonl` is the PLAY RECORD
 (user-decided 2026-10-22): one JSON line per CLOSED sentence day and language that players
 played on the day — the puzzle's `words`, `holes` and each secret's 15 `nearest` ranked
 words, beside how its on-time, engaged players did (`players`, `finished`, `logTries30`, and
