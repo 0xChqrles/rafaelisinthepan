@@ -68,6 +68,20 @@ export function loadPurgeConfig(env: NodeJS.ProcessEnv = process.env): Pick<Conf
   return { scoreTable };
 }
 
+// The BOT ROUNDS function's configuration (`botRoundsWorker.ts`): the puzzle bucket (the
+// spoiler rule reads the day's rank maps) and the table (the group, its members' profiles
+// and their round rows). No secret: it authenticates nobody — IAM is the only way in.
+export function loadBotRoundsConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): Pick<Config, 'bucket' | 'scoreTable'> {
+  const bucket = env.PUZZLE_BUCKET;
+  if (!bucket) {
+    throw new Error('PUZZLE_BUCKET env var is required.');
+  }
+  const { scoreTable } = loadPurgeConfig(env);
+  return { bucket, scoreTable };
+}
+
 export async function loadScoreSecrets(
   client: SSMClient,
   config: Pick<Config, 'turnstileSecretParameter' | 'ipHmacSecretParameter'>,

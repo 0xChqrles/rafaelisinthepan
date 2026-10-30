@@ -20,9 +20,10 @@
 // beside somebody's name read as a verdict every single time ("n'a pas le plaisir d'un
 // commentaire… sympa"), where a podium with no comments at all reads as the bot being
 // quiet. Two lines that open the same way are a tic the parallel writers cannot see
-// (`echoes`): the later one is written again, told what to avoid.
+// (`echoes`): the later one is written again, shown the line it echoed and told to open
+// and say it differently (v24: a podium's lines sharing one verb is the same tic).
 
-import { fold } from '@whippin/shared';
+import { fold, type BotMemberRound } from '@whippin/shared';
 import { plainPunctuation } from '../chat/format';
 import type { GroupConfig } from '../config/groupConfig';
 import type { Podium } from '../domain/podium';
@@ -32,6 +33,7 @@ import type { Log } from '../log';
 import { JUDGE_TIMEOUT_MS, chooseLine, refusalNote } from './lineJudge';
 import { buildSystemPrompt } from './personality';
 import { LlmUnavailable, type LlmProvider } from './types';
+import { TRIED_WORDS_RULE, triedWordsFacts } from '../puzzle/groupRounds';
 
 // Room for a name, a record and a comparison; still one short sentence under a podium
 // line. 120 until 2026-09-14, when the facts grew rivals and records: measured on the beta
@@ -88,7 +90,7 @@ export function podiumCommentLines(podium: Podium): PodiumCommentLine[] {
 
 const TASK = `Task: one short comment under ONE line of tonight's podium, from the FACTS given. Any number, name or place you say comes from the facts, never invented. The line's own name and score are printed right above your comment, so do not repeat them.
 
-A score is only worth something next to tonight's other scores. Say the ONE thing a friend would actually say about this line: who it beat, who beat it, that for once they beat somebody they usually lose to, or a callback to something from the day's conversation or your diary (a promise, a bet, a running joke). Say it in plain words, never as a statistic: no counts like "5 fois sur 13", no fractions, no records, no medians. Your own life stays out of it. "tu" to the player, never about them, and a line is ONE player even when others made the same score. Plain text, no quotes, ONE short sentence. A line with nothing notable gets a plain short acknowledgement.`;
+A score is only worth something next to tonight's other scores. Say the ONE thing a friend would actually say about this line: who it beat, who beat it, that for once they beat somebody they usually lose to, or a callback to something from the day's conversation or your diary (a promise, a bet, a running joke). Say it in plain words, never as a statistic: no counts like "5 fois sur 13", no fractions, no records, no medians. Your own lines are in the day's conversation when it is given: say this result differently from every line you already posted today, never with the same verb or the same opening. ${TRIED_WORDS_RULE} Your own life stays out of it. "tu" to the player, never about them, and a line is ONE player even when others made the same score. Plain text, no quotes, ONE short sentence. A line with nothing notable gets a plain short acknowledgement.`;
 
 const MAX_TOKENS = 4000;
 // COUNTS NOW THAT THINKING IS OFF (DeepSeek ignores it while thinking). 1.1 was the
@@ -209,7 +211,8 @@ async function commentForLine(
   line: PodiumCommentLine,
   facts: string,
   background: string,
-  avoidOpening: string | null,
+  // A rewrite of an echo: the opening it shared, and the earlier line that used it first.
+  avoid: { opening: string; line: string } | null,
   log: Log,
   deadlineAt: number,
 ): Promise<string | null> {
@@ -221,7 +224,7 @@ async function commentForLine(
       return null;
     }
     const notes = [
-      ...(avoidOpening ? [`Another line of this podium already opens with "${avoidOpening}"; open differently.`] : []),
+      ...(avoid ? [`Another line of this podium already opens with "${avoid.opening}"; open differently, and say it with another verb than that line: "${avoid.line}"`] : []),
       ...(round > 1 ? [refusalNote(refused)] : []),
     ];
     const content = notes.length ? `${shown}\n\n${notes.join('\n')}` : shown;
@@ -275,6 +278,9 @@ export async function generatePodiumComments(
   // When the caller must have its podium queued by. Absent, there is no clock — the tests
   // and a hand-run replay.
   deadlineAt: number = Number.POSITIVE_INFINITY,
+  // The posters whose rounds the Whippin group verified, by JID (`playerIds.ts`
+  // `verifiedRoundsOf`): their far words ride in their line's facts as `triedWords`.
+  rounds: ReadonlyMap<string, BotMemberRound> = new Map(),
 ): Promise<Comments> {
   const lines = podiumCommentLines(podium);
   if (lines.length === 0) return new Map();
@@ -285,7 +291,8 @@ export async function generatePodiumComments(
     extra: TASK,
   });
   const block = backgroundBlock(background);
-  const factsOf = (line: PodiumCommentLine) => JSON.stringify(lineFacts(line, lines.length, context));
+  const factsOf = (line: PodiumCommentLine) =>
+    JSON.stringify({ ...lineFacts(line, lines.length, context), ...triedWordsFacts(rounds.get(line.jid)?.farGuesses ?? []) });
   // PARALLEL, and every line settles on its own.
   const written = await Promise.all(
     lines.map(async (line) => [line.id, await commentForLine(provider, system, line, factsOf(line), block, null, log, deadlineAt)] as const),
@@ -299,7 +306,10 @@ export async function generatePodiumComments(
     const again = await Promise.all(
       [...echoed].map(async ([id, opening]) => {
         const line = lines.find((l) => l.id === id)!;
-        return [id, await commentForLine(provider, system, line, factsOf(line), block, opening, log, deadlineAt)] as const;
+        // The first line to use that opening is the one shown, so the rewrite sees what it echoed.
+        const first = lines.find((l) => l.id !== id && comments.has(l.id) && openingOf(comments.get(l.id)!) === opening);
+        const avoid = { opening, line: first ? comments.get(first.id)! : '' };
+        return [id, await commentForLine(provider, system, line, factsOf(line), block, avoid, log, deadlineAt)] as const;
       }),
     );
     for (const [id, comment] of again) if (comment) comments.set(id, comment);

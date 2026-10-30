@@ -30,7 +30,12 @@
 // `LinkStore.deleteAccount` removes in its one transaction, and what the hourly purge worker,
 // `backend/src/purge.ts`, erases after it — stated as "within 7 days", an upper bound like the
 // TTLs below), the us-east-1 stacks (`infra/bin/app.ts`), Turnstile
-// (`turnstile.ts`) and Umami's three events (`analytics.ts`). A change to any of those is
+// (`turnstile.ts`), Umami's three events (`analytics.ts`), and the WhatsApp bot's read of its
+// linked group's rounds (`shared/src/botRounds.ts`: members only, far guesses only, cached in
+// the bot's memory for about a minute, the bot's table keeping which sender is which
+// account with a name snapshot until a rounds read no longer names the member —
+// `whatsapp-bot` `domain/playerIds.ts` `pruneLinks` — and its own lines 48 h,
+// `chat/dayLog.ts` `DAY_LOG_TTL_SECONDS`) with the bot's model provider (`whatsapp-bot` `config/env.ts`). A change to any of those is
 // a change to this file. Two values here are NOT in the code and are read off the world
 // instead — the host's legal entity and the mailbox provider, both below.
 
@@ -70,7 +75,7 @@ const PRIVACY_MAILBOX_PROVIDER = 'Google';
 
 // WHEN THIS WAS LAST TRUE. An ISO instant rather than a sentence per language: the two would
 // drift, and a date reads differently in the two locales anyway (the screen formats it).
-export const PRIVACY_UPDATED = '2026-10-07';
+export const PRIVACY_UPDATED = '2026-10-30';
 
 // A NAMED THING and what is true of it — the shape four of the six sections take, because the
 // question this page answers is "what, and why" and a bare paragraph buries the "what".
@@ -132,6 +137,10 @@ const PRIVACY: Record<UiLang, PrivacyDoc> = {
             term: 'Anything you write to us',
             body: 'If you email {mail}, we receive your message and the address it came from, like any inbox. On its way there it passes through our server, which holds it for about 30 days and then deletes it automatically. The copy that reached our inbox stays until we no longer need it, or until you ask us to delete it.',
           },
+          {
+            term: 'If your group has our WhatsApp bot',
+            body: 'Some groups are linked to a WhatsApp group where our bot comments on the day. If you are in one of them, the bot reads your rounds in that group: how far you are, your number of tries, and the words you tried that came nowhere near the answer. It never gets the hidden words or your close guesses. It keeps what it reads in memory for about a minute. It stores which WhatsApp contact is which Whippin account, with your WhatsApp name, until it next sees you are no longer in the group. Its own messages, which may quote those words, are kept for two days. Joining the group is what allows this. Leaving it stops it.',
+          },
         ],
       },
       {
@@ -174,6 +183,10 @@ const PRIVACY: Record<UiLang, PrivacyDoc> = {
           {
             term: PRIVACY_MAILBOX_PROVIDER,
             body: `Hosts the inbox that messages sent to {mail} are forwarded to. If you write to us, your message, your address and anything you attach end up in a mailbox run by ${PRIVACY_MAILBOX_PROVIDER}, under its own terms, for as long as we keep the message. Nothing else about you goes there.`,
+          },
+          {
+            term: 'DeepSeek',
+            body: 'Writes the WhatsApp bot\'s messages. If you are in a group linked to the bot, your name, your tries, how far you are and those far-off words are sent to DeepSeek so the bot can talk about them, and it may quote them in that WhatsApp group. DeepSeek is a Chinese company and its servers are in China. It sees nothing else of your games.',
           },
         ],
         outro: 'That is it. We do not sell anything about you, and there are no ads.',
@@ -222,6 +235,10 @@ const PRIVACY: Record<UiLang, PrivacyDoc> = {
             term: "Ce que vous nous écrivez",
             body: "Si vous écrivez à {mail}, on reçoit votre message et l'adresse d'où il vient, comme n'importe quelle boîte mail. En chemin, il passe par notre serveur, qui le garde environ 30 jours puis le supprime automatiquement. La copie arrivée dans la boîte reste tant qu'on en a besoin, ou jusqu'à ce que vous nous demandiez de la supprimer.",
           },
+          {
+            term: 'Si votre groupe a notre bot WhatsApp',
+            body: "Certains groupes sont reliés à un groupe WhatsApp où notre bot commente la journée. Si vous êtes dans l'un d'eux, le bot lit vos parties dans ce groupe : où vous en êtes, votre nombre d'essais, et les mots que vous avez essayés qui sont restés loin de la réponse. Il n'a jamais les mots cachés ni vos propositions proches. Il garde ce qu'il lit en mémoire environ une minute. Il stocke quel contact WhatsApp correspond à quel compte Whippin, avec votre nom WhatsApp, jusqu'à ce qu'il voie que vous n'êtes plus dans le groupe. Ses propres messages, qui peuvent citer ces mots, sont gardés deux jours. C'est le fait de rejoindre le groupe qui le permet. Le quitter l'arrête.",
+          },
         ],
       },
       {
@@ -264,6 +281,10 @@ const PRIVACY: Record<UiLang, PrivacyDoc> = {
           {
             term: PRIVACY_MAILBOX_PROVIDER,
             body: `Héberge la boîte mail vers laquelle les messages envoyés à {mail} sont transférés. Si vous nous écrivez, votre message, votre adresse et ce que vous y joignez arrivent dans une boîte gérée par ${PRIVACY_MAILBOX_PROVIDER}, selon ses propres conditions, tant qu'on garde le message. Rien d'autre vous concernant n'y va.`,
+          },
+          {
+            term: 'DeepSeek',
+            body: "Écrit les messages du bot WhatsApp. Si vous êtes dans un groupe relié au bot, votre nom, vos essais, où vous en êtes et ces mots restés loin sont envoyés à DeepSeek pour que le bot puisse en parler, et il peut les citer dans ce groupe WhatsApp. DeepSeek est une entreprise chinoise et ses serveurs sont en Chine. Il ne voit rien d'autre de vos parties.",
           },
         ],
         outro: "C'est tout. On ne vend rien qui vous concerne, et il n'y a pas de publicité.",

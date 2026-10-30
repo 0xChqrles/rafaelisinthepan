@@ -7,6 +7,7 @@ import { App, Aspects } from 'aws-cdk-lib';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { describe, expect, it } from 'vitest';
+import { BOT_ROUNDS_FUNCTION_NAME } from '@whippin/shared';
 import { BotStack, BOT_METRICS_NAMESPACE } from './bot-stack';
 
 const ACCOUNT = '111122223333';
@@ -94,6 +95,35 @@ describe('WhatsApp bot stack (#236)', () => {
     for (const s of ssm) {
       expect(JSON.stringify(s.Resource)).toContain(`:ssm:${REGION}:${ACCOUNT}:parameter/test/bot-llm-key`);
     }
+  });
+
+  it('lets the task and the podium job invoke the backend\'s BotRoundsFn by its fixed name, and nothing else', () => {
+    const tasks = Object.values(template.findResources('AWS::ECS::TaskDefinition'));
+    const taskEnv = tasks[0].Properties.ContainerDefinitions[0].Environment as { Name: string; Value: unknown }[];
+    expect(Object.fromEntries(taskEnv.map((e) => [e.Name, e.Value])).BOT_ROUNDS_FUNCTION).toBe(
+      BOT_ROUNDS_FUNCTION_NAME,
+    );
+    const podium = Object.values(template.findResources('AWS::Lambda::Function')).find((fn) =>
+      JSON.stringify(fn.Properties.Environment ?? {}).includes('BOT_TABLE'),
+    );
+    expect(podium?.Properties.Environment.Variables.BOT_ROUNDS_FUNCTION).toBe(BOT_ROUNDS_FUNCTION_NAME);
+
+    // The ARN is formatted, not imported: no cross-stack reference, and exactly the one function.
+    const roleOf = (logicalId: string) =>
+      Object.values(template.findResources('AWS::IAM::Policy'))
+        .filter((p) => JSON.stringify(p.Properties.Roles).includes(`"${logicalId}"`))
+        .flatMap((p) => p.Properties.PolicyDocument.Statement as Record<string, unknown>[]);
+    const taskRole = tasks[0].Properties.TaskRoleArn['Fn::GetAtt'][0] as string;
+    const podiumRole = podium!.Properties.Role['Fn::GetAtt'][0] as string;
+    for (const role of [taskRole, podiumRole]) {
+      const invokes = roleOf(role).filter((s) => JSON.stringify(s.Action).includes('lambda:InvokeFunction'));
+      expect(invokes, role).toHaveLength(1);
+      expect(invokes[0].Action).toBe('lambda:InvokeFunction');
+      expect(invokes[0].Resource).toEqual({
+        'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, `:lambda:${REGION}:${ACCOUNT}:function:${BOT_ROUNDS_FUNCTION_NAME}`]],
+      });
+    }
+    expect(JSON.stringify(template.toJSON())).not.toContain('Fn::ImportValue');
   });
 
   it('creates a podium, a reminder and a diary schedule per ENABLED group, on ONE job', () => {

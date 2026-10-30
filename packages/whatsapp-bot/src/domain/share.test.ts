@@ -34,6 +34,22 @@ describe('share links are deterministic input (#236)', () => {
     expect(withoutShares(`gg ${signed} bravo`, ORIGIN)).toBe('gg bravo');
   });
 
+  // The signature is CAPTURED (2026-10-30) as a claim the Whippin group's rounds verify
+  // (`playerIds.ts`) — and still never survives into the text a prompt is built from.
+  it('captures a signed share\'s publicId, and only a whole one', () => {
+    const t = sentenceToken();
+    expect(sharesIn(`gg https://whippin.ai/s/${t}/abcdefghij234567 bravo`, ORIGIN)[0]?.publicId).toBe('abcdefghij234567');
+    expect(sharesIn(`https://whippin.ai/s/${t}/abcdefghij234567.`, ORIGIN)[0]?.publicId).toBe('abcdefghij234567');
+    expect(sharesIn(`https://whippin.ai/s/${t}`, ORIGIN)[0]).not.toHaveProperty('publicId');
+    // Too long, wrong alphabet, too short: no signature, the share still counts.
+    for (const tail of ['abcdefghij2345678', 'ABCDEFGHIJ234567', 'abcdefghij23456', 'abcdefghij234561']) {
+      const [share] = sharesIn(`https://whippin.ai/s/${t}/${tail}`, ORIGIN);
+      expect(share?.token).toBe(t);
+      expect(share).not.toHaveProperty('publicId');
+    }
+    expect(withoutShares(`https://whippin.ai/s/${t}/abcdefghij234567`, ORIGIN)).toBe('');
+  });
+
   it('decodes a sentence result to the token\'s own day and score', () => {
     const t = sentenceToken();
     const [share] = sharesIn(`https://whippin.ai/s/${t}`, ORIGIN);

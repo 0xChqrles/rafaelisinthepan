@@ -11,6 +11,7 @@ import {
 } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
 import {
+  BOT_ROUNDS_FUNCTION_NAME,
   DEVICE_INDEX_NAME,
   DEVICE_INDEX_PARTITION_KEY,
   DEVICE_INDEX_SORT_KEY,
@@ -53,6 +54,9 @@ const LAMBDA_ASSETS = path.resolve(here, '..', '..', 'backend', 'src', 'assets')
 // queue the deletion enqueues. Its own entrypoint in the backend package (the same stores,
 // built from the same config), so nothing about the purge is written twice.
 const PURGE_ENTRY = path.resolve(here, '..', '..', 'backend', 'src', 'purgeWorker.ts');
+// The WhatsApp bot's read of its Whippin group's rounds (shared `botRounds.ts`): its own
+// entrypoint, invoked by the bot stack over IAM — no route, no Function URL, no CDN.
+const BOT_ROUNDS_ENTRY = path.resolve(here, '..', '..', 'backend', 'src', 'botRoundsWorker.ts');
 
 // The bundling every backend function shares: the backend is ESM ("type":"module") and uses
 // `import.meta`, so it stays ESM; the AWS SDK v3 ships in the Node runtime, so bundling it
@@ -77,6 +81,16 @@ const ROW_STORE_ACTIONS = [
   'dynamodb:UpdateItem',
   'dynamodb:DeleteItem',
   'dynamodb:ConditionCheckItem',
+] as const;
+
+// The bot's read (BotRoundsFn) only READS: a group's member list (Query), its group row
+// (GetItem), the members' round rows and profiles as known key sets (BatchGetItem). Nothing it does writes, so nothing it holds may — a leaked bot task role
+// can then read any group whose id it names (the function checks the id's shape only; the
+// bot's config is what names one), and change nothing in the game.
+const BOT_ROUNDS_TABLE_ACTIONS = [
+  'dynamodb:Query',
+  'dynamodb:GetItem',
+  'dynamodb:BatchGetItem',
 ] as const;
 
 // The month's bill (the whole account's, in USD) past which the operator is mailed. The
@@ -448,6 +462,63 @@ export class BackendStack extends Stack {
           'The account purge worker failed a job. A deleted account\'s rows are still stored; the job stays queued and the next hourly run retries it. Read the PurgeFn logs.',
       });
       purgeErrors.addAlarmAction(new cwActions.SnsAction(mailAlerts.topic));
+    }
+
+    // ── Lambda: the WhatsApp bot's read of a group's rounds ──────────────────
+    // The bot (a sibling stack, `bot-stack.ts`) invokes this by its FIXED name
+    // (`BOT_ROUNDS_FUNCTION_NAME`), granted on the formatted ARN there, so neither stack
+    // exports anything to the other — and a bot deployed before this function exists is
+    // simply refused its invoke, which it reads as "no guesses". It has no Function URL and
+    // no CloudFront behavior: nothing on the internet reaches it. The spoiler rule (only
+    // guesses farther than every hole's start leave) is the function's own, in the backend.
+    const botRoundsLogGroup = new logs.LogGroup(this, 'BotRoundsFnLogs', {
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    const botRoundsFn = new NodejsFunction(this, 'BotRoundsFn', {
+      entry: BOT_ROUNDS_ENTRY,
+      handler: 'handler',
+      functionName: BOT_ROUNDS_FUNCTION_NAME,
+      runtime: lambda.Runtime.NODEJS_22_X,
+      architecture: lambda.Architecture.ARM_64,
+      // The API's one full vCPU, for the API's reason: every call parses the day's FULL
+      // artifact (each far guess's rank and display come off its maps), several MB of JSON,
+      // and that parse is CPU — at a fraction of a core a chat reply would wait on it.
+      memorySize: 1769,
+      // The API's own bound: a few reads and one parse. The bot waits on this answer before
+      // it replies, so a slower one is better refused than waited for.
+      timeout: Duration.seconds(10),
+      // One bot, a handful of groups: a few chat lines at once is the whole load. The
+      // ceiling keeps a looping bot from spending the account's concurrency the API needs.
+      reservedConcurrentExecutions: 5,
+      logGroup: botRoundsLogGroup,
+      // The table and the puzzle store, and nothing else: no secret (it verifies nothing
+      // and hashes no address), no origin, no sender.
+      environment: {
+        PUZZLE_BUCKET: bucket.bucketName,
+        SCORE_TABLE: scoreTable.tableName,
+      },
+      depsLockFilePath: REPO_LOCKFILE,
+      bundling: BACKEND_BUNDLING,
+    });
+    // READ-ONLY on both: the puzzle objects (the slice, the full artifact) and the rows.
+    bucket.grantRead(botRoundsFn);
+    scoreTable.grant(botRoundsFn, ...BOT_ROUNDS_TABLE_ACTIONS);
+    // A failing read is the bot joking blind — every group's chat loses the live state at
+    // once, and nothing a player sees says why. An hour's window: the bot calls this at chat
+    // cadence, so one bad hour is worth a look; missing data is not breaching (a quiet hour
+    // invoked nothing), and no recovery mail, like the purge's.
+    if (mailAlerts) {
+      const botRoundsErrors = new cloudwatch.Alarm(this, 'BotRoundsFnErrors', {
+        metric: botRoundsFn.metricErrors({ period: Duration.hours(1), statistic: 'Sum' }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        alarmDescription:
+          'The WhatsApp bot\'s read of its group\'s rounds failed. The bot answers without the members\' live state until it recovers. Read the BotRoundsFn logs.',
+      });
+      botRoundsErrors.addAlarmAction(new cwActions.SnsAction(mailAlerts.topic));
     }
 
     // ── Capacity and spend alerts ─────────────────────────────────────────────
@@ -926,6 +997,27 @@ export class BackendStack extends Stack {
           id: 'AwsSolutions-IAM5',
           reason:
             'DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216), which lists a deleted account\'s devices — with the API function\'s own Query/GetItem/BatchGetItem/PutItem/UpdateItem/DeleteItem/ConditionCheckItem (no Scan): the worker runs the API\'s stores, whose group leave asserts rows it does not write.',
+        },
+        {
+          id: 'AwsSolutions-L1',
+          reason:
+            'Runtime is pinned to NODEJS_22_X — the current maintained Node LTS on Lambda — for reproducible builds; we deliberately pin a specific LTS rather than a floating "latest". cdk-nag\'s bundled runtime list lags new LTS releases.',
+        },
+      ],
+      true, // also apply to the function's generated role/policy (children)
+    );
+    NagSuppressions.addResourceSuppressions(
+      botRoundsFn,
+      [
+        {
+          id: 'AwsSolutions-IAM4',
+          reason:
+            'AWS-managed basic-execution policy — the standard least-broad managed policy for CloudWatch Logs.',
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table and its indexes (the grant\'s <table>/index/* resource, which covers the one DeviceByAccount GSI) with READ actions only — Query/GetItem/BatchGetItem; no write, no Scan.',
         },
         {
           id: 'AwsSolutions-L1',

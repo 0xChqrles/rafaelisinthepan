@@ -917,14 +917,24 @@ The live routes then share:
 - **`packages/whatsapp-bot` lives inside the monorepo and OUTSIDE the game runtime.** It may
   import `@whippin/shared`; nothing imports it. A consumer of the PUBLIC share-token contract,
   never a source of game truth: no WhatsApp identity on an account, no share-encoding change
-  for it, no LLM deciding a score or a rank. A WhatsApp group is NOT a #271 group (it reads
-  share tokens, never a membership); #271 left it untouched. Its config may NAME one
-  (`whippinGroup`, user-decided 2026-09-14), whose invite link (`shared/src/invite.ts`
-  `groupInvitePath`) the morning reminder prints after reading only its public face
-  (`GET /groups?id=`) — the invite contract has a fourth consumer, and still no membership read.
+  for it, no LLM deciding a score or a rank. A WhatsApp group is NOT a #271 group; #271 left
+  it untouched. Its config may NAME one (`whippinGroup`, user-decided 2026-09-14), whose
+  invite link (`shared/src/invite.ts` `groupInvitePath`) the morning reminder prints after
+  reading its public face (`GET /groups?id=`) — the invite contract has a fourth consumer.
   It also LINKS the tutorial's levels (user-decided 2026-10-02): which levels exist, in which
   languages, and their paths are `shared/src/tutorial.ts`, the table the web teaches from —
   the bot answers a question about how the game works with the level's page.
+- **The bot READS the rounds of the members of the Whippin group its config names**
+  (user-decided 2026-10-30): the backend's `BotRoundsFn` (`backend/src/botRounds.ts`), no
+  route and no CDN, invoked by the bot task and the podium Lambda over IAM
+  (`lambda:InvokeFunction` on the fixed `BOT_ROUNDS_FUNCTION_NAME`); the wire is ONE shared
+  module, `shared/src/botRounds.ts`. It answers each member's round of one daily (started,
+  tries, %, solved, ∞) and their FAR guesses. **Consent is membership** of that group: only
+  its members' rows are read. **The spoiler rule is the SERVER's** (`farGuesses`): a guess
+  any map ranks at or inside its hole's `start_rank` never leaves the backend, on any day;
+  the bot refuses a whole answer off the contract. The bot records which WhatsApp sender is
+  which publicId (its own table, nothing on the account) only from a VERIFIED signed share —
+  the id a member of the share's (language, day) rounds, the round agreeing with the token.
 - **Its stack is a sibling** (`WhippinBotStack`, `infra/lib/bot-stack.ts`): one Fargate task
   (`desiredCount 1`, stop-before-start — one Baileys session is a correctness rule), a
   bot-owned table, an SQS outbound queue, a podium Lambda with one schedule per group, alarms

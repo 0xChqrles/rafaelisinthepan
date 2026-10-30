@@ -18,12 +18,15 @@
 // recorded." Baileys delivers a live message once, so a write that fails for good is a
 // lost share the log says so about — the accepted integration failure, made visible.
 
+import type { BotMemberRound } from '@whippin/shared';
 import type { GroupConfig, GroupRegistry } from '../config/groupConfig';
 import type { Log } from '../log';
 import { tag } from '../log';
 import { commandIds, type OutboundCommand, type OutboundQueue } from '../outbound/commands';
 import type { DeclarationStore, Declaration } from './declarations';
 import type { LeaderStore } from './leader';
+import type { SharerLookup } from './playerIds';
+import { within } from '../puzzle/groupRounds';
 import type { InboundMessage } from './message';
 import { displayName } from './names';
 import { rankOf } from './podium';
@@ -45,7 +48,18 @@ export interface IngestDeps {
   // and the retries (`llm/shareComment.ts`, wired in main.ts). Absent, or answering null,
   // means the emoji stands in. `said` is what the player wrote around the share, as the
   // caller remembered it (below).
-  comment?: (group: GroupConfig, key: { dayNumber: number; sender: string; lang: string; said?: string }) => Promise<string | null>;
+  // `sharer` is the sharer's own round when `sharer` below found it — a promise, since the
+  // line awaits it beside its other facts rather than after them.
+  comment?: (
+    group: GroupConfig,
+    key: { dayNumber: number; sender: string; lang: string; said?: string; sharer?: Promise<BotMemberRound | null> },
+  ) => Promise<string | null>;
+  // WHO SHARED IT, AS THE WHIPPIN GROUP KNOWS THEM (2026-10-30, `playerIds.ts`): verifies a
+  // signed share against the group's rounds and remembers the sender's account, or finds a
+  // sender already known. Run BESIDE the acknowledgement, bounded by `SHARER_BUDGET_MS`:
+  // it never holds an emoji back, and a lookup that fails costs the mapping and the words
+  // about their guesses, nothing else.
+  sharer?: SharerLookup;
   // Told a line ONCE IT IS QUEUED — the line is a turn in the group's conversation and the
   // caller remembers it as one (main.ts) — and never for a line the queue refused for
   // good: remembered, that would be a message the bot believes it sent and nobody read.
@@ -58,6 +72,10 @@ export interface IngestDeps {
 export type IngestOutcome = 'ignored' | 'no_share' | 'recorded' | 'unchanged' | 'failed';
 
 const WRITE_ATTEMPTS = 3;
+// How long a share may wait on finding its sharer. The rounds read behind it is cached for a
+// minute; this bounds a cold one.
+export const SHARER_BUDGET_MS = 3000;
+
 
 export function createIngest(deps: IngestDeps) {
   const now = deps.now ?? (() => new Date());
@@ -205,19 +223,29 @@ export function createIngest(deps: IngestDeps) {
     const own = (share: DecodedShare) => share.lang === group.language;
     const worse = (a: DecodedShare, b: DecodedShare) => (own(a) !== own(b) ? own(b) : rankOf(a) > rankOf(b));
     const best = recorded.reduce<DecodedShare | null>((kept, share) => (kept && !worse(kept, share) ? kept : share), null);
+    // Started before the acknowledgement and awaited only after it is queued.
+    const sharer =
+      best && deps.sharer
+        ? within(deps.sharer(group, best, message), SHARER_BUDGET_MS).catch((error: Error) => {
+            deps.log.warn({ event: 'players.lookup_failed', group: tag(group.id), error: error.message }, 'the sharer stays unknown');
+            return null;
+          })
+        : null;
     if (group.acknowledge !== 'none' && message.live && best) {
       // A LINE WHEN ASKED FOR ONE, THE EMOJI WHEN THERE IS NONE. The share is already
       // durable; what is being chosen here is only how it is acknowledged, and an
       // unavailable model may cost the words but never the acknowledgement itself.
       const line =
         group.acknowledge === 'say' && deps.comment
-          ? await deps.comment(group, { dayNumber: best.dayNumber, sender: message.sender, lang: best.lang, ...(said ? { said } : {}) }).catch((error) => {
-              deps.log.warn(
-                { event: 'share.comment_threw', group: tag(group.id), error: (error as Error).message },
-                'the line failed; acknowledging with the emoji',
-              );
-              return null;
-            })
+          ? await deps
+              .comment(group, { dayNumber: best.dayNumber, sender: message.sender, lang: best.lang, ...(said ? { said } : {}), ...(sharer ? { sharer } : {}) })
+              .catch((error) => {
+                deps.log.warn(
+                  { event: 'share.comment_threw', group: tag(group.id), error: (error as Error).message },
+                  'the line failed; acknowledging with the emoji',
+                );
+                return null;
+              })
           : null;
       const queued = await enqueue(
         line
@@ -243,6 +271,9 @@ export function createIngest(deps: IngestDeps) {
     // this buys a tendency and not a guarantee — worth having, since the two are usually
     // seconds apart and the acknowledgement reading second is merely odd, never wrong.
     for (const announcement of announcements) await enqueue(announcement, group.id);
+    // Settled before the message's turn moves on, so a conversation about the share a
+    // moment later already knows who shared it.
+    await sharer;
     return failed ? 'failed' : outcome;
   };
 }

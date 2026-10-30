@@ -4,6 +4,7 @@
 // key is read at runtime — the backend's own rule).
 
 import { fileURLToPath } from 'node:url';
+import { BOT_ROUNDS_FUNCTION_NAME } from '@whippin/shared';
 
 export interface LlmEnv {
   provider: string; // BOT_LLM_PROVIDER, e.g. "deepseek"
@@ -31,6 +32,10 @@ export interface BotEnv {
   // the site above: `siteOrigin` is only ever a pattern for spotting share links, where
   // this one is actually called, to read the day's source (`puzzle/daySource.ts`).
   apiBaseUrl: string;
+  // BOT_ROUNDS_FUNCTION — the backend's `BotRoundsFn`, invoked over IAM for the Whippin
+  // group's rounds (`puzzle/groupRounds.ts`). The shared fixed name unless a deployment
+  // says otherwise; nothing about it is a secret.
+  roundsFunction: string;
   metricsNamespace?: string; // BOT_METRICS_NAMESPACE — unset = no CloudWatch metrics
   llm: LlmEnv;
 }
@@ -92,6 +97,7 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): BotEnv {
     groupsDir: env.BOT_GROUPS_DIR || sourceGroupsDir(),
     siteOrigin: (env.BOT_SITE_ORIGIN || 'https://whippin.ai').replace(/\/+$/, ''),
     apiBaseUrl: (env.BOT_API_BASE_URL || 'https://api.whippin.ai').replace(/\/+$/, ''),
+    roundsFunction: env.BOT_ROUNDS_FUNCTION?.trim() || BOT_ROUNDS_FUNCTION_NAME,
     metricsNamespace: env.BOT_METRICS_NAMESPACE || undefined,
     llm: {
       provider: env.BOT_LLM_PROVIDER || 'deepseek',

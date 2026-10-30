@@ -4,7 +4,7 @@ import { GroupRegistry, parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
 import type { OutboundCommand } from '../outbound/commands';
 import { memoryDeclarationStore } from './declarations';
-import { createIngest } from './ingest';
+import { SHARER_BUDGET_MS, createIngest } from './ingest';
 import { memoryLeaderStore } from './leader';
 import type { InboundMessage } from './message';
 
@@ -482,5 +482,29 @@ describe('share ingestion (#236)', () => {
     expect(sent[0]).toMatchObject({ kind: 'message', text: 'Zou prend la tête avec 3.' });
     await ingest(message({ id: 'M3', timestamp: 1_002, text: `${ORIGIN}/s/${token(5)}` }));
     expect(sent).toHaveLength(1);
+  });
+
+  // WHO SHARED IT (2026-10-30): looked up beside the acknowledgement, never in front of it.
+  it('hands the comment the sharer\'s round, and never holds an emoji back for the lookup', async () => {
+    const member = { publicId: 'gabgabgabgab2345', name: 'Gab', started: true, tries: 7, progress: 100, solved: true, gaveUp: false, over: false, farGuesses: [] };
+    const sharer = vi.fn(async () => member);
+    const comment = vi.fn(async (_g: unknown, key: { sharer?: Promise<unknown> }) => ((await key.sharer) ? 'avec ses mots.' : 'sans.'));
+    const said = harness(registry({ acknowledge: 'say' }), { comment, sharer });
+    await said.ingest(message({ text: `gg ${ORIGIN}/s/${token(7)}/gabgabgabgab2345` }));
+    expect(sharer).toHaveBeenCalledWith(expect.objectContaining({ id: GROUP }), expect.objectContaining({ publicId: 'gabgabgabgab2345', score: 7 }), expect.objectContaining({ id: 'M1' }));
+    expect(said.sent[0]).toMatchObject({ kind: 'message', text: 'avec ses mots.' });
+    // A react group: the emoji is queued while a lookup that never answers still hangs, and
+    // ingest itself gives up on it at the budget.
+    vi.useFakeTimers();
+    try {
+      const hung = harness(registry(), { sharer: () => new Promise(() => {}) });
+      const done = hung.ingest(message());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(hung.sent[0]).toMatchObject({ kind: 'reaction' });
+      await vi.advanceTimersByTimeAsync(SHARER_BUDGET_MS);
+      expect(await done).toBe('recorded');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
