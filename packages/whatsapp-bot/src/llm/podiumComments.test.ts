@@ -276,10 +276,10 @@ describe('podium comments are commentary from the numbers (#236, #277)', () => {
   // facts — the judge's too, which reads the same facts.
   it('puts a verified poster\'s far words in THEIR line\'s facts only', async () => {
     const provider = answering({ Gab: ['Un.'], Delphine: ['Deux.'], Zou: ['Trois.'] });
-    const gab = { publicId: 'gabgabgabgab2345', name: 'Gab', started: true, tries: 3, progress: 100, solved: true, gaveUp: false, over: false, farGuesses: [{ try: 1, word: 'girafe', rank: null }] };
+    const gab = { publicId: 'gabgabgabgab2345', name: 'Gab', started: true, tries: 3, progress: 100, solved: true, gaveUp: false, over: false, farGuesses: [{ try: 1, word: 'girafe' }] };
     await generatePodiumComments(provider, group, podium, context, none, log, Number.POSITIVE_INFINITY, new Map([['a', gab]]));
     const facts = provider.requests.map((r) => factsIn(r.messages[0].content));
-    expect(facts.find((f) => f.who === 'Gab').triedWords).toEqual([{ try: 1, word: 'girafe', rank: null }]);
+    expect(facts.find((f) => f.who === 'Gab').triedWords).toEqual([{ try: 1, word: 'girafe' }]);
     expect(facts.find((f) => f.who === 'Zou')).not.toHaveProperty('triedWords');
     expect(provider.requests[0].system).toContain('"triedWords"');
   });

@@ -79,16 +79,17 @@ function startRanks(puzzle: Puzzle): Map<string, number> {
   return starts;
 }
 
-// THE SPOILER RULE over one round's raw log: every UNIQUE try in play order (the
-// `countTries` dedup — `try` is the number the player saw), kept only when no map ranks it
-// at or inside its secret's start. A map with no start rank to compare against (no hole
+// THE SPOILER RULE over one round's raw log: every UNIQUE try (the `countTries` dedup —
+// `try` is the number the player saw), kept only when no map ranks it at or inside its
+// secret's start, and handed back ODDEST FIRST (misses, then farthest; the contract's
+// order) with no rank: the rank orders, the word is what leaves. A map with no start rank to compare against (no hole
 // names that secret — never in a published artifact) treats every ranked word as near: the
 // rule fails closed.
 export function farGuesses(puzzle: Puzzle, log: readonly string[]): BotGuess[] {
   const starts = startRanks(puzzle);
   const secrets = Object.keys(puzzle.ranks);
   const seen = new Set<string>();
-  const far: BotGuess[] = [];
+  const far: (BotGuess & { rank: number | null })[] = [];
   for (const typed of log) {
     const key = guessKey(puzzle.ranks, typed);
     if (seen.has(key)) continue;
@@ -114,7 +115,11 @@ export function farGuesses(puzzle: Puzzle, log: readonly string[]): BotGuess[] {
       rank: closest ? closest.rank : null,
     });
   }
-  return far;
+  far.sort((a, b) => {
+    if ((a.rank === null) !== (b.rank === null)) return a.rank === null ? -1 : 1;
+    return (b.rank ?? 0) - (a.rank ?? 0) || a.try - b.try;
+  });
+  return far.map(({ try: at, word }) => ({ try: at, word }));
 }
 
 function notStarted(publicId: string, name: string): BotMemberRound {
