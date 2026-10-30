@@ -16,7 +16,7 @@ export function member(over: Partial<BotMemberRound> = {}): BotMemberRound {
     solved: true,
     gaveUp: false,
     over: false,
-    farGuesses: [{ try: 2, word: 'chaise', rank: 812 }],
+    farGuesses: [{ try: 2, word: 'chaise' }],
     ...over,
   };
 }
@@ -35,11 +35,12 @@ describe('the Whippin group\'s rounds, read over IAM (2026-10-30)', () => {
     expect(parseRoundsAnswer(answer([member({ progress: 140 })]), asked)).toBeNull();
     expect(parseRoundsAnswer(answer([member(), { publicId: 'zzzzzzzzzz234567' }]), asked)).toBeNull();
     expect(parseRoundsAnswer('nope', asked)).toBeNull();
-    // A miss (null rank) is a far guess; a rank of 0 is the SECRET, which the server never
-    // sends — arriving anyway, it refuses the whole read rather than reach a prompt.
-    expect(parseRoundsAnswer(answer([member({ farGuesses: [{ try: 1, word: 'xqz', rank: null }] })]), asked)).not.toBeNull();
-    expect(parseRoundsAnswer(answer([member({ farGuesses: [{ try: 1, word: 'secret', rank: 0 }] })]), asked)).toBeNull();
-    expect(parseRoundsAnswer(answer([member({ farGuesses: [{ try: 0, word: 'x', rank: 3 }] })]), asked)).toBeNull();
+    // No rank travels: a stray one is ignored, never carried on toward a prompt.
+    const stray = parseRoundsAnswer(answer([member({ farGuesses: [{ try: 1, word: 'xqz', rank: 7 } as never] })]), asked);
+    expect(stray && stray !== 'refused' && stray.members[0].farGuesses).toEqual([{ try: 1, word: 'xqz' }]);
+    // A try below 1, or an empty word, refuses the whole read.
+    expect(parseRoundsAnswer(answer([member({ farGuesses: [{ try: 0, word: 'x' }] })]), asked)).toBeNull();
+    expect(parseRoundsAnswer(answer([member({ farGuesses: [{ try: 1, word: ' ' }] })]), asked)).toBeNull();
   });
 
   it('caches an answer for a minute per (group, language, date), with ONE flight for concurrent askers', async () => {
@@ -98,15 +99,18 @@ describe('the Whippin group\'s rounds, read over IAM (2026-10-30)', () => {
     expect(await reader.read('not-a-group', 'fr', '2026-10-30')).toBeNull();
   });
 
-  it('picks the odd words: misses first, then the farthest, returned in play order', () => {
+  it('keeps the first of the server\'s order (oddest first), returned in play order', () => {
+    // As the server sends them: misses b, e; then c (900), a (300), d (150).
     const guesses = [
-      { try: 1, word: 'a', rank: 300 },
-      { try: 2, word: 'b', rank: null },
-      { try: 3, word: 'c', rank: 900 },
-      { try: 4, word: 'd', rank: 150 },
-      { try: 5, word: 'e', rank: null },
+      { try: 2, word: 'b' },
+      { try: 5, word: 'e' },
+      { try: 3, word: 'c' },
+      { try: 1, word: 'a' },
+      { try: 4, word: 'd' },
     ];
     expect(oddGuesses(guesses, 3).map((g) => g.word)).toEqual(['b', 'c', 'e']);
+    // The server's order is not disturbed.
+    expect(guesses.map((g) => g.word)).toEqual(['b', 'e', 'c', 'a', 'd']);
     expect(oddGuesses(guesses, 10)).toHaveLength(5);
     expect(oddGuesses([], 3)).toEqual([]);
   });

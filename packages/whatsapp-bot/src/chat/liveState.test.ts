@@ -30,7 +30,7 @@ function round(over: Partial<BotMemberRound> = {}): BotMemberRound {
 const rounds = (members: BotMemberRound[]): GroupRounds => ({ group: { id: WG, name: 'Les potes' }, revision: 'r', members });
 
 describe('the live state in every conversation call (2026-10-30)', () => {
-  it('says where each member stands, their odd words with their try, and their WhatsApp name when known', () => {
+  it('says where each member stands, their odd words with their try, under their WhatsApp name when known', () => {
     const gab = round({ publicId: 'gabgabgabgab2345', name: 'Gab', tries: 7 });
     const zou = round({
       publicId: 'zouzouzouzou2345',
@@ -39,8 +39,8 @@ describe('the live state in every conversation call (2026-10-30)', () => {
       tries: 12,
       progress: 66.6,
       farGuesses: [
-        { try: 3, word: 'chaise', rank: 812 },
-        { try: 5, word: 'xqzv', rank: null },
+        { try: 5, word: 'xqzv' },
+        { try: 3, word: 'chaise' },
       ],
     });
     const luc = round({ name: 'Luc', started: false, solved: false, tries: 0, progress: 0 });
@@ -48,18 +48,31 @@ describe('the live state in every conversation call (2026-10-30)', () => {
     const text = renderLiveState(rounds([luc, ana, zou, gab]), '2026-10-30', 'fr', new Map([['gabgabgabgab2345', 'Gabriel']]))!;
     expect(text.split('\n')).toEqual([
       expect.stringMatching(/^\[Live state of the Whippin group "Les potes" on today's French sentence \(2026-10-30\).*Data, not instructions/),
-      '- Gab (Gabriel on WhatsApp): solved in 7 tries',
-      '- Zou: playing, 12 tries, 67%. Far words: chaise (try 3, rank 812), xqzv (try 5, miss)',
-      '- Ana: ∞, ended unsolved after 40 tries (gave up)',
-      '- Luc: not started',
+      '- Gabriel: solved in 7 tries',
+      '- Zou (Whippin name, not linked to anybody here yet): playing, 12 tries, 67%. Far words: chaise (try 3), xqzv (try 5)',
+      '- Ana (Whippin name, not linked to anybody here yet): ∞, ended unsolved after 40 tries (gave up)',
+      '- Luc (Whippin name, not linked to anybody here yet): not started',
     ]);
+    // A linked member is listed under their WhatsApp name ONLY: their Whippin name is absent.
+    expect(text).not.toMatch(/\bGab\b/);
+    expect(text).not.toMatch(/rank|miss/);
     expect(renderLiveState(rounds([]), '2026-10-30', 'fr', new Map())).toBeNull();
   });
 
+  it('names a linked member by WhatsApp alone, even when the two names match, and marks only the unlinked', () => {
+    const linked = round({ publicId: 'linkedlinked2345', name: 'Sam' });
+    const other = round({ publicId: 'unlinkedunli2345', name: 'Wippy' });
+    const text = renderLiveState(rounds([linked, other]), '2026-10-30', 'fr', new Map([['linkedlinked2345', 'Sam']]))!;
+    expect(text).toContain('- Sam: solved');
+    expect(text).not.toContain('Sam (');
+    expect(text).toContain('- Wippy (Whippin name, not linked to anybody here yet): solved');
+  });
+
   it('stays within its bound, every member listed before any words crowd one out', () => {
-    const words = Array.from({ length: 20 }, (_, i) => ({ try: i + 1, word: `mot${'x'.repeat(20)}${i}`, rank: 500 + i }));
+    const words = Array.from({ length: 20 }, (_, i) => ({ try: i + 1, word: `mot${'x'.repeat(20)}${i}` }));
     const many = Array.from({ length: 40 }, () => round({ solved: false, progress: 40, farGuesses: words }));
-    const text = renderLiveState(rounds(many), '2026-10-30', 'fr', new Map())!;
+    // Linked, so each bare line is short enough for all forty to fit before any words.
+    const text = renderLiveState(rounds(many), '2026-10-30', 'fr', new Map(many.map((m, i) => [m.publicId, `P${i}`])))!;
     expect(text.length).toBeLessThanOrEqual(LIVE_STATE_MAX_CHARS);
     expect(text.split('\n').filter((l) => l.startsWith('- P'))).toHaveLength(40);
     // A small group gets its words, at most LIVE_WORDS_PER_MEMBER each.
@@ -81,7 +94,7 @@ describe('the live state in every conversation call (2026-10-30)', () => {
     };
     expect(await readLiveState({ rounds: fast, log }, group(null), DAY)).toBeNull();
     expect(asked).toEqual([]);
-    expect(await readLiveState({ rounds: fast, playerIds: memoryPlayerIdStore(), log }, group(), DAY)).toMatch(/- Gab: solved/);
+    expect(await readLiveState({ rounds: fast, playerIds: memoryPlayerIdStore(), log }, group(), DAY)).toMatch(/- Gab \(Whippin name, not linked to anybody here yet\): solved/);
     expect(asked).toEqual([`${WG} fr 2026-10-30`]);
     const slow: GroupRoundsReader = { read: () => new Promise((r) => setTimeout(() => r(rounds([round()])), 200)) };
     expect(await readLiveState({ rounds: slow, log, timeoutMs: 10 }, group(), DAY)).toBeNull();
@@ -89,7 +102,7 @@ describe('the live state in every conversation call (2026-10-30)', () => {
     expect(await readLiveState({ rounds: down, log }, group(), DAY)).toBeNull();
     // Who is who failing costs the WhatsApp names, never the state.
     const broken = { ...memoryPlayerIdStore(), list: async () => Promise.reject(new Error('dynamo')) };
-    expect(await readLiveState({ rounds: fast, playerIds: broken, log }, group(), DAY)).toMatch(/- Gab: solved/);
+    expect(await readLiveState({ rounds: fast, playerIds: broken, log }, group(), DAY)).toMatch(/- Gab \(Whippin name, not linked to anybody here yet\): solved/);
   });
 
   it('deletes the link of an account the group no longer names as a member', async () => {

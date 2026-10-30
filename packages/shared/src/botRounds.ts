@@ -25,14 +25,14 @@ export interface BotRoundsRequest {
 }
 
 // One far guess. `try` is its 1-based position among the round's UNIQUE tries (the
-// `countTries` dedup), so "your 4th try" means what the player saw.
+// `countTries` dedup), so "your 4th try" means what the player saw. NO RANK (user-decided
+// 2026-10-31): how far a word landed is not the joke, the word is — the server ranks only to
+// filter and to order.
 export interface BotGuess {
   try: number;
   // The accented display form of its closest group when a map ranks it; for a word no map
   // ranks (a MISS), the folded form the log stores — accents are gone, the word is right.
   word: string;
-  // Its closest rank over the day's maps; null for a miss (no rank, still a try).
-  rank: number | null;
 }
 
 export interface BotMemberRound {
@@ -48,7 +48,9 @@ export interface BotMemberRound {
   gaveUp: boolean;
   // ENDED UNSOLVED — given up or capped (the shared `roundEnded`).
   over: boolean;
-  // In play order. Every far guess of the log, deduped like the score.
+  // Every far guess of the log, deduped like the score, ODDEST FIRST: the misses (a word the
+  // day does not rank at all), then the farthest ranks, ties by the earlier try — so a
+  // reader keeping the first few keeps the oddest.
   farGuesses: BotGuess[];
 }
 

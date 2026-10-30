@@ -8,8 +8,8 @@
 // the function reads that group's members and nobody else, and a config with no such field
 // reads nothing. THE SPOILER RULE IS THE SERVER'S: a guess that ever came as close as its
 // hole's start word never leaves the backend, so what arrives here reveals nothing beyond
-// the start words every player already sees. A rank of 0 arriving anyway is a contract
-// broken somewhere, and the whole answer is refused rather than trusted.
+// the start words every player already sees. No rank travels: the server orders the words
+// oddest first and the word is all a line needs.
 //
 // INVOKED OVER IAM, never fetched: the function has no route and no CDN in front of it, and
 // the task's role is what grants the call (`lambda:InvokeFunction`). Built against
@@ -75,9 +75,7 @@ const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isI
 function parseGuess(raw: unknown): BotGuess | null {
   if (!isRecord(raw) || !isCount(raw.try) || raw.try < 1) return null;
   if (typeof raw.word !== 'string' || raw.word.trim() === '') return null;
-  // ZERO IS THE SECRET. The server never sends it; if it ever did, nothing here may.
-  if (raw.rank !== null && !(isCount(raw.rank) && raw.rank > 0)) return null;
-  return { try: raw.try, word: raw.word, rank: raw.rank };
+  return { try: raw.try, word: raw.word };
 }
 
 function parseMember(raw: unknown): BotMemberRound | null {
@@ -159,16 +157,11 @@ export function createGroupRoundsReader(deps: { invoke: InvokeRounds; log: Log; 
   };
 }
 
-// THE WORDS WORTH A LOOK, at most `max`: the MISSES first (a word the game did not rank at
-// all is the oddest thing a player can type), then the farthest ranks, ties by the earlier
-// try — and handed back in play order, each with its try number, so "your 4th try" is what
-// the player saw.
+// THE WORDS WORTH A LOOK, at most `max`: the first of the server's order (oddest first:
+// misses, then the farthest) — handed back in play order, each with its try number, so
+// "your 4th try" is what the player saw.
 export function oddGuesses(guesses: readonly BotGuess[], max: number): BotGuess[] {
-  const odd = [...guesses].sort((a, b) => {
-    if ((a.rank === null) !== (b.rank === null)) return a.rank === null ? -1 : 1;
-    return (b.rank ?? 0) - (a.rank ?? 0) || a.try - b.try;
-  });
-  return odd.slice(0, max).sort((a, b) => a.try - b.try);
+  return guesses.slice(0, max).sort((a, b) => a.try - b.try);
 }
 
 // How many of a player's far words a comment's facts carry.
@@ -181,8 +174,8 @@ export function triedWordsFacts(guesses: readonly BotGuess[]) {
   const picked = oddGuesses(guesses, TRIED_WORDS_MAX);
   if (picked.length === 0) return {};
   return {
-    triedWords: picked.map((g) => ({ try: g.try, word: g.word, rank: g.rank })),
-    triedWordsReading: `"triedWords" are words this player tried today that came nowhere near any hidden word ("try" is which of their tries it was, "rank" how far it landed, bigger is farther, null when the game does not rank the word at all). A word with no rank may have lost its accents. They say nothing about the answer.`,
+    triedWords: picked.map((g) => ({ try: g.try, word: g.word })),
+    triedWordsReading: `"triedWords" are words this player tried today that came nowhere near any hidden word ("try" is which of their tries it was). A word may have lost its accents. They say nothing about the answer.`,
   };
 }
 

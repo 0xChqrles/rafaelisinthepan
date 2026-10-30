@@ -941,8 +941,9 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
     at all. The privacy notice says so.
   - **THE SPOILER RULE IS THE SERVER'S**: only a guess that never came as close as its
     hole's start word (farther than `start_rank` on every secret, or a miss) ever leaves the
-    backend, on any day. The bot adds one check of its own: an answer holding a rank of 0,
-    or anything else off the contract, is refused WHOLE (`parseRoundsAnswer`) — a half-
+    backend, on any day, and no rank leaves with it (user-decided 2026-10-31: the word is
+    the joke; the server orders the words oddest first). An answer off the contract is
+    refused WHOLE (`parseRoundsAnswer`) — a half-
     trusted read is how a wrong number reaches a prompt.
   - **CACHED A MINUTE, IN MEMORY ONLY** (`LIVE_ROUNDS_TTL_MS` = 60 s per (Whippin group,
     language, date), one flight shared by concurrent askers, a failure held the same minute
@@ -963,13 +964,15 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
     acknowledgement, bounded by `SHARER_BUDGET_MS` (3 s): it never holds an emoji back, and a
     failure costs the mapping and the words, never the line.
   - **THE SHARE LINE** gets the sharer's far words as `triedWords` (`TRIED_WORDS_MAX` = 12,
-    misses then the farthest ranks, try numbers kept, in play order) with a reading note; the
+    the first of the server's oddest-first order, try numbers kept, back in play order) with a reading note; the
     task may joke about ONE odd word when it is funny, never a word not in the facts, never a
     guess at the answer. The fact judge sees the same JSON.
   - **THE CONVERSATION** carries the group's live state for its language today in EVERY call,
     as a USER turn marked as data (`chat/liveState.ts`; a Whippin name and a guess are typed
-    text, so never the system prompt), after the diary: every member by Whippin name (their
-    WhatsApp name too when mapped), started / tries / % / solved / ∞, and up to
+    text, so never the system prompt), after the diary: every member by the name the group knows
+    them by HERE (user-decided 2026-10-31: "call people by their whatsapp name instead of
+    whippin names") — a linked member by their WhatsApp `displayName` alone, their Whippin
+    name never shown; only an unlinked one by their Whippin name, marked as not linked yet — started / tries / % / solved / ∞, and up to
     `LIVE_WORDS_PER_MEMBER` (8) odd words each, within `LIVE_STATE_MAX_CHARS` (3000) — every
     member listed before any words, a group too big counted ("and N more"). The system
     prompt carries `LIVE_STATE_NOTE` (the state exists, its words are far from the answers by
@@ -1118,7 +1121,7 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
   carries. Nothing new is STORED, beyond the bot's own longer lines in the day log.
   **Since 2026-10-30 a group whose config names a `whippinGroup` also sends the Whippin
   group's ROUNDS** (`puzzle/groupRounds.ts`): on every conversation call, each member's
-  Whippin name, tries, %, solved / ∞ and up to eight far guesses (words that never came
+  name (the WhatsApp one when linked, else the Whippin one), tries, %, solved / ∞ and up to eight far guesses (words that never came
   closer than the start word, the server's rule); on a share line, the sharer's far
   guesses; on the podium, each verified poster's far guesses. Members only — joining that Whippin group is the consent, which the privacy
   notice states — and only the JID → publicId map (with a name snapshot) is STORED, until a

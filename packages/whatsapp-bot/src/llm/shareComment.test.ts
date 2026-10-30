@@ -187,13 +187,14 @@ describe('the spoken acknowledgement of a share is commentary from the numbers (
   // THE WORDS THEY TRIED (2026-10-30): the sharer's far guesses, when the bot knows who
   // they are, ride in the facts — the judge's too, so a joke about one is checked.
   it('carries the sharer\'s odd words as "triedWords", capped, misses and the farthest first, for the writer AND the judge', async () => {
-    const farGuesses = Array.from({ length: 20 }, (_, i) => ({ try: i + 1, word: `mot${i}`, rank: i === 4 ? null : 200 + i }));
+    // The server's order, oddest first: the miss (try 5), then the farthest (try 20 down).
+    const farGuesses = [4, ...Array.from({ length: 20 }, (_, i) => 19 - i).filter((i) => i !== 4)].map((i) => ({ try: i + 1, word: `mot${i}` }));
     const sharer = Promise.resolve({ publicId: 'gabgabgabgab2345', name: 'Gab', started: true, tries: 7, progress: 100, solved: true, gaveUp: false, over: false, farGuesses });
     const p = provider([]);
     await generateShareComment(p.provider, group, { ...depsFor(await store()), sharer }, log);
     const sent = JSON.parse(p.written()[0].messages[0].content);
     expect(sent.triedWords).toHaveLength(TRIED_WORDS_MAX);
-    expect(sent.triedWords[0]).toEqual({ try: 5, word: 'mot4', rank: null });
+    expect(sent.triedWords[0]).toEqual({ try: 5, word: 'mot4' });
     expect(sent.triedWords.map((w: { try: number }) => w.try)).toEqual([...sent.triedWords.map((w: { try: number }) => w.try)].sort((a, b) => a - b));
     expect(sent.triedWords.some((w: { word: string }) => w.word === 'mot19')).toBe(true);
     expect(sent.triedWordsReading).toMatch(/nowhere near/);

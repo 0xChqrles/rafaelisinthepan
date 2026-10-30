@@ -98,8 +98,8 @@ describe('farGuesses — the spoiler rule', () => {
     expect(far).toEqual([]);
   });
 
-  it('emits a guess one rank past the start, with its closest group display and rank', () => {
-    expect(farGuesses(ARTIFACT, ['rive'])).toEqual([{ try: 1, word: 'rive', rank: 4 }]);
+  it('emits a guess one rank past the start, with its closest group display', () => {
+    expect(farGuesses(ARTIFACT, ['rive'])).toEqual([{ try: 1, word: 'rive' }]);
   });
 
   it('withholds a word far in one map but near in another', () => {
@@ -108,26 +108,52 @@ describe('farGuesses — the spoiler rule', () => {
 
   it('names a word far everywhere by its CLOSEST group', () => {
     // nuit ranks it 4 (`aubé`), phare 5 (`aube`): the closer map's display wins.
-    expect(farGuesses(ARTIFACT, ['aube'])).toEqual([{ try: 1, word: 'aubé', rank: 4 }]);
+    expect(farGuesses(ARTIFACT, ['aube'])).toEqual([{ try: 1, word: 'aubé' }]);
   });
 
-  it('emits misses as the folded string, rank null', () => {
-    expect(farGuesses(ARTIFACT, ['zzz'])).toEqual([{ try: 1, word: 'zzz', rank: null }]);
+  it('emits misses as the folded string', () => {
+    expect(farGuesses(ARTIFACT, ['zzz'])).toEqual([{ try: 1, word: 'zzz' }]);
     // A key every object inherits is still a miss, never an entry with no word.
     expect(farGuesses(ARTIFACT, ['constructor', 'tostring'])).toEqual([
-      { try: 1, word: 'constructor', rank: null },
-      { try: 2, word: 'tostring', rank: null },
+      { try: 1, word: 'constructor' },
+      { try: 2, word: 'tostring' },
     ]);
   });
 
   it('numbers tries like countTries: near tries count, duplicates and aliases do not', () => {
     const far = farGuesses(ARTIFACT, ['mer', 'rive', 'mers', 'zzz', 'rives', 'zzz', 'quai', 'aube']);
     // Unique tries: mer(1) rive(2) zzz(3) quai(4) aube(5) — `mers`/`rives`/`zzz` repeat.
+    // Oddest first: the miss, then rank 4 twice, the earlier try first.
     expect(far).toEqual([
-      { try: 2, word: 'rive', rank: 4 },
-      { try: 3, word: 'zzz', rank: null },
-      { try: 5, word: 'aubé', rank: 4 },
+      { try: 3, word: 'zzz' },
+      { try: 2, word: 'rive' },
+      { try: 5, word: 'aubé' },
     ]);
+  });
+
+  it('hands the words back ODDEST FIRST: misses, then the farthest rank, ties by the earlier try', () => {
+    // Closest ranks: rive 4, aube 4 (via nuit), plus a far word at 9 in both maps.
+    const wide: Puzzle = {
+      ...ARTIFACT,
+      ranks: {
+        phare: { ...ARTIFACT.ranks.phare, loin: { word: 'loin', rank: 9, dq: 0 } },
+        nuit: { ...ARTIFACT.ranks.nuit, loin: { word: 'loin', rank: 9, dq: 0 } },
+      },
+    };
+    const far = farGuesses(wide, ['aube', 'rive', 'loin', 'zzz', 'yyy']);
+    expect(far).toEqual([
+      { try: 4, word: 'zzz' },
+      { try: 5, word: 'yyy' },
+      { try: 3, word: 'loin' },
+      { try: 1, word: 'aubé' },
+      { try: 2, word: 'rive' },
+    ]);
+  });
+
+  it('never lets a rank leave: every guess carries exactly try and word', () => {
+    const far = farGuesses(ARTIFACT, ['rive', 'zzz', 'aube', 'mer', 'constructor']);
+    expect(far.length).toBeGreaterThan(0);
+    for (const guess of far) expect(Object.keys(guess).sort()).toEqual(['try', 'word']);
   });
 
   it('fails closed on a ranked map whose secret no hole names', () => {
@@ -164,7 +190,7 @@ describe('readBotRounds', () => {
           solved: true,
           gaveUp: false,
           over: false,
-          farGuesses: [{ try: 1, word: 'rive', rank: 4 }],
+          farGuesses: [{ try: 1, word: 'rive' }],
         },
         {
           publicId: named,
@@ -175,7 +201,7 @@ describe('readBotRounds', () => {
           solved: false,
           gaveUp: false,
           over: false,
-          farGuesses: [{ try: 1, word: 'zzz', rank: null }],
+          farGuesses: [{ try: 1, word: 'zzz' }],
         },
         {
           publicId: idle,
