@@ -14,11 +14,14 @@
 // refusal to start at all.
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { LambdaClient } from '@aws-sdk/client-lambda';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dayNumber } from '@whippin/shared';
 import { createAgent } from './chat/agent';
 import { createDaySourceReader } from './puzzle/daySource';
+import { createGroupRoundsReader, lambdaRoundsInvoker } from './puzzle/groupRounds';
+import { readLiveState } from './chat/liveState';
 import { DayLog, composeTurnText, dayOfInstant, dynamoDayLogStore, sentIn } from './chat/dayLog';
 import { dynamoMessageTimes } from './chat/messageTimes';
 import { dynamoDiaryStore } from './chat/diary';
@@ -42,12 +45,13 @@ import { botRegion, loadEnv } from './config/env';
 import { loadGroups, type GroupConfig } from './config/groupConfig';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
 import { createIngest } from './domain/ingest';
+import { createSharerLookup, dynamoPlayerIdStore } from './domain/playerIds';
 import { displayName } from './domain/names';
 import { withoutShares } from './domain/share';
 import { dynamoLeaderStore } from './domain/leader';
 import type { InboundMessage, Mention } from './domain/message';
 import { createLlmProvider, createWebClient, type WebClient } from './llm';
-import { generateShareComment } from './llm/shareComment';
+import { generateShareComment, ownLinesOf } from './llm/shareComment';
 import { createLog, tag } from './log';
 import { commandIds, type OutboundQueue } from './outbound/commands';
 import { dynamoSentStore } from './outbound/dedupStore';
@@ -178,12 +182,28 @@ async function main(): Promise<void> {
   // CEILING the conversation does. That ceiling exists to bound what the bot can cost in a
   // day, and a second model path outside it would leave it bounding half the spend. Out of
   // budget answers null, which is the emoji — the share is still acknowledged.
+  //
+  // It is SHOWN THE BOT'S OWN LINES OF THE DAY (v24), off the day log every said line goes
+  // into, so a share line does not say a result the way the last five did.
   const comment = provider
-    ? (group: GroupConfig, key: { dayNumber: number; sender: string; lang: string; said?: string }) =>
-        generateShareComment(provider, group, { declarations, ...key }, log, () =>
-          takeDailyCall(limits, env.llm.dailyCallCeiling, new Date()),
+    ? (group: GroupConfig, key: Omit<Parameters<typeof generateShareComment>[2], 'declarations' | 'earlierLines'>) =>
+        generateShareComment(
+          provider,
+          group,
+          { declarations, ...key, earlierLines: ownLinesOf(dayLog.today(group.id, dayOfInstant(Date.now()))) },
+          log,
+          () => takeDailyCall(limits, env.llm.dailyCallCeiling, new Date()),
         )
     : undefined;
+
+  // THE WHIPPIN GROUP'S ROUNDS (2026-10-30): read from the backend's function over IAM,
+  // cached a minute in memory, for a group whose config names its Whippin group — the share
+  // line's sharer and the conversation's live state. Who is who is the one thing stored.
+  const rounds = createGroupRoundsReader({
+    invoke: lambdaRoundsInvoker(new LambdaClient({ region: botRegion() }), env.roundsFunction),
+    log,
+  });
+  const playerIds = dynamoPlayerIdStore(dynamo, env.table);
 
   // The bot's own words into the day log, said in the log when the store refuses: a turn
   // the bot cannot store is one it forgets at the next restart, nothing worse.
@@ -203,6 +223,7 @@ async function main(): Promise<void> {
     siteOrigin: env.siteOrigin,
     log,
     comment,
+    sharer: createSharerLookup({ rounds, playerIds, log }),
     // A spoken acknowledgement is something the bot SAID in the group, so it belongs in the
     // day log like any other turn — otherwise "pourquoi tu dis ça ?" a minute later is a
     // question about a message the bot cannot see. Remembered once it is QUEUED, not once
@@ -227,6 +248,8 @@ async function main(): Promise<void> {
         // Read once per (language, day) and held for the process's life: the task is
         // long-lived, so the group pays one 4-6 MB read a day and not one per question.
         daySource: createDaySourceReader({ apiBaseUrl: env.apiBaseUrl, log }),
+        // Every call carries the group's live state when its config names a Whippin group.
+        liveState: (group, today) => readLiveState({ rounds, playerIds, log }, group, today),
         log,
       })
     : null;

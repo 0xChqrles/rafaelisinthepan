@@ -7,6 +7,7 @@ import { createLog } from '../log';
 import { LlmUnavailable, type LlmProvider, type LlmRequest, type LlmResponse } from '../llm/types';
 import { ANSWERING, DEFAULT_REACTION, OWN_QUOTE_NOTE, WEB_RULES, createAgent, fromOwner, reactionIn } from './agent';
 import { DayLog, memoryDayLogStore, type Turn } from './dayLog';
+import { LIVE_STATE_NOTE } from './liveState';
 import { memoryDiaryStore } from './diary';
 import { memoryLimitStore } from './limits';
 import { NEW_EXCHANGE, type Approach, type Exchange } from './trigger';
@@ -572,5 +573,25 @@ describe('the web, on an answer the bot was asked for (v22)', () => {
     await said(dayLog, 'x');
     expect(await withWeb(provider, dayLog, broken)(message('x'), group, identity, TODAY, asked())).toEqual({ kind: 'reply', text: 'Pas trouvé.' });
     expect((requests[1].messages.at(-1) as { content: string }).content).toMatch(/error/);
+  });
+
+  // THE LIVE STATE (2026-10-30): a USER turn in every call — what members typed never goes in
+  // the system prompt — and one note there saying it exists. No state, no turn, no note.
+  it('carries the group\'s live state as a data turn on every call, the system prompt only noting it', async () => {
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'WhippinBot ça avance ?');
+    const liveState = vi.fn(async () => '[Live state of the Whippin group "x"]\n- Gab: playing, 4 tries, 40%');
+    const { provider, requests } = scripted([() => ({ text: 'Gab rame.' })]);
+    await agentWith(provider, { dayLog, liveState })(message('ça avance ?'), group, identity, TODAY, asked());
+    expect(liveState).toHaveBeenCalledWith(group, TODAY);
+    expect(requests[0].messages[0]).toEqual({ role: 'user', content: expect.stringContaining('- Gab: playing, 4 tries, 40%') });
+    expect(requests[0].system).toContain(LIVE_STATE_NOTE);
+    expect(requests[0].system).not.toContain('- Gab: playing');
+    for (const absent of [async () => null, async () => Promise.reject(new Error('down'))]) {
+      const quiet = scripted([() => ({ text: 'Rien.' })]);
+      await agentWith(quiet.provider, { dayLog, liveState: absent })(message('ça avance ?'), group, identity, TODAY, asked());
+      expect(quiet.requests[0].system).not.toContain(LIVE_STATE_NOTE);
+      expect(contents(quiet.requests[0]).some((c) => c.includes('Live state'))).toBe(false);
+    }
   });
 });

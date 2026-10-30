@@ -79,6 +79,10 @@
                               the idempotent physical purge each queued job owes
       purgeWorker.ts          the hourly PurgeFn Lambda entry: drains the purge jobs to a
                               deadline (SCORE_TABLE only, no secrets)
+      botRounds.ts            BotRoundsFn's read: one Whippin group's members' rounds for a
+                              daily + the SPOILER RULE that picks which guesses leave
+      botRoundsWorker.ts      the BotRoundsFn Lambda entry, invoked by the WhatsApp bot over IAM
+                              (PUZZLE_BUCKET + SCORE_TABLE, no secrets)
       linkStore.ts            link storage contract: the challenge/binding/allowance/job keys,
                               the address + code hashing, and the one indivisible `adopt`
       dynamoLinkStore.ts      prod conditional counters, the attempt-counting verify, and the
@@ -780,6 +784,26 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   re-sending), and the BIND, which had no retry at all. The group and score stores keep
   the policy of not retrying, but a mixed or malformed cancellation surfaces instead of
   being read as `gone` or `capped`.
+- **The bot's rounds read (`BotRoundsFn`, `botRounds.ts` + `botRoundsWorker.ts`; the wire
+  is shared `botRounds.ts`):** a Lambda named `BOT_ROUNDS_FUNCTION_NAME`, reached ONLY by
+  the bot task's `lambda:InvokeFunction` — no URL, no CloudFront, no device token. Payload
+  `{group, lang, date}`: a `GROUP_ID_PATTERN` id, a supported language, a real calendar date
+  no later than the server's active day (a bonus address is none) — anything else ANSWERS
+  `{ok: false, error: 'bad_request'}`, never a throw; a group with no row is
+  `unknown_group`; a store failure THROWS (the bot reads "unavailable"). **Members only**:
+  the group's public face (`readGroupFace`, gone accounts dropped) names exactly the round
+  rows read — consent is membership of the group the bot's config names. Reads as the day
+  board's playing rows do: the current artifact (fresh slice -> revision-keyed full artifact)
+  CONCURRENTLY with `RoundStore.getMany`; only a row naming that revision with a guess is
+  `started` (`tries` = `countTries`, `progress`/`solved`/`gaveUp` stored, `over` =
+  `roundEnded`); an unpublished day is `revision: null`, nobody started. Names: the profile
+  name, else `anonName`. **THE SPOILER RULE (`farGuesses`):** the unique tries in play
+  order (`guessKey` dedup, `try` 1-based over ALL unique tries), kept only when EVERY map
+  either does not rank the guess or ranks it STRICTLY greater than its secret's
+  `start_rank` (secrets by slug; a map no hole names fails closed) — on any day. `word` is
+  the closest group's display, a miss's the folded string; `rank` its min rank, null for a
+  miss. The log line carries the outcome and counts, never a guess or a name.
+
 - **The inbound mail FORWARDER (#230, `src/mailForward.ts`; rules recorded here since the
   root compaction of 2026-09-05 — infra's half is in `infra/AGENTS.md`).** A separate Lambda
   fed by the SES receipt rule (S3 action first, then this): it fetches the raw MIME the S3

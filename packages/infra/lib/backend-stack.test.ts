@@ -2,7 +2,7 @@ import { App, Aspects } from 'aws-cdk-lib';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { describe, expect, it } from 'vitest';
-import { VIEWER_IP_HEADER, preflightHeaders } from '@whippin/shared';
+import { BOT_ROUNDS_FUNCTION_NAME, VIEWER_IP_HEADER, preflightHeaders } from '@whippin/shared';
 import { BackendStack } from './backend-stack';
 
 const ACCOUNT = '111122223333';
@@ -56,9 +56,10 @@ function viewerIpFunctionId(): string {
   )!;
   return id;
 }
-// The stack's two backend functions, told apart by their construct ids: the API (`PuzzleFn`)
-// and #207's purge worker (`PurgeFn`).
-function lambdaFunction(t: Template, prefix: 'PuzzleFn' | 'PurgeFn') {
+// The stack's backend functions, told apart by their construct ids: the API (`PuzzleFn`),
+// #207's purge worker (`PurgeFn`) and the WhatsApp bot's read of its group (`BotRoundsFn`).
+type BackendFn = 'PuzzleFn' | 'PurgeFn' | 'BotRoundsFn';
+function lambdaFunction(t: Template, prefix: BackendFn) {
   const found = Object.entries(t.findResources('AWS::Lambda::Function')).filter(([id]) =>
     id.startsWith(prefix),
   );
@@ -67,7 +68,7 @@ function lambdaFunction(t: Template, prefix: 'PuzzleFn' | 'PurgeFn') {
   return { logicalId, properties: resource.Properties as Record<string, any> };
 }
 // Every statement of the policies attached to a function's own role.
-function roleStatements(t: Template, prefix: 'PuzzleFn' | 'PurgeFn'): Record<string, unknown>[] {
+function roleStatements(t: Template, prefix: BackendFn): Record<string, unknown>[] {
   const role = lambdaFunction(t, prefix).properties.Role['Fn::GetAtt'][0] as string;
   return Object.values(t.findResources('AWS::IAM::Policy'))
     .filter((policy) => JSON.stringify(policy.Properties.Roles).includes(`"${role}"`))
@@ -149,8 +150,8 @@ const LIVE_ROUTES = [
 
 describe('score production boundary (#169)', () => {
   it('passes only parameter names to Lambda and grants one exact GetParameters read', () => {
-    // The API and the purge worker (#207), and no other function.
-    expect(Object.keys(template.findResources('AWS::Lambda::Function'))).toHaveLength(2);
+    // The API, the purge worker (#207) and the bot's rounds read, and no other function.
+    expect(Object.keys(template.findResources('AWS::Lambda::Function'))).toHaveLength(3);
     const variables = lambdaFunction(template, 'PuzzleFn').properties.Environment
       .Variables as Record<string, unknown>;
     expect(variables).toMatchObject({
@@ -658,6 +659,72 @@ describe('account purge worker (#207)', () => {
     // The worker itself is built either way: a deleted account is purged whether or not
     // anybody is told when it fails.
     lambdaFunction(mailTemplate(undefined), 'PurgeFn');
+  });
+});
+
+// ── The WhatsApp bot's read of its group's rounds (shared botRounds.ts) ──────
+describe('bot rounds read (BotRoundsFn)', () => {
+  it('is named by the shared contract, bounded, and given the stores and nothing else', () => {
+    const { properties } = lambdaFunction(template, 'BotRoundsFn');
+    expect(properties).toMatchObject({
+      // The bot stack grants invoke on this exact name; a drift is a refused invoke.
+      FunctionName: BOT_ROUNDS_FUNCTION_NAME,
+      Handler: 'index.handler',
+      Runtime: 'nodejs22.x',
+      Architectures: ['arm64'],
+      // It parses the day's full artifact, the API's CPU-bound work.
+      MemorySize: 1769,
+      Timeout: 10,
+      ReservedConcurrentExecutions: 5,
+    });
+    const [tableId] = Object.keys(template.findResources('AWS::DynamoDB::Table'));
+    const [bucketId] = Object.keys(template.findResources('AWS::S3::Bucket'));
+    expect(properties.Environment.Variables).toEqual({
+      SCORE_TABLE: { Ref: tableId },
+      PUZZLE_BUCKET: { Ref: bucketId },
+    });
+    const logGroup = properties.LoggingConfig.LogGroup.Ref as string;
+    expect(template.findResources('AWS::Logs::LogGroup')[logGroup].Properties.RetentionInDays).toBe(30);
+  });
+
+  it('can READ the rows and the puzzles, and write nothing', () => {
+    const statements = roleStatements(template, 'BotRoundsFn');
+    const actions = statements.flatMap(({ Action }) => (Array.isArray(Action) ? Action : [Action]));
+    const dynamo = actions.filter((a) => String(a).startsWith('dynamodb:'));
+    expect(dynamo.sort()).toEqual(['dynamodb:BatchGetItem', 'dynamodb:GetItem', 'dynamodb:Query']);
+    const s3Actions = actions.filter((a) => String(a).startsWith('s3:'));
+    expect(s3Actions.length).toBeGreaterThan(0);
+    for (const action of s3Actions) expect(String(action)).toMatch(/^s3:(Get|List)/);
+    // No secret, no mail, no write of any kind.
+    for (const action of actions) {
+      expect(String(action)).not.toMatch(/Put|Update|Delete|Write|ConditionCheck|Scan|ssm:|ses:/);
+    }
+  });
+
+  it('is reachable over IAM alone: no Function URL, no permission for any service', () => {
+    const { logicalId } = lambdaFunction(template, 'BotRoundsFn');
+    const urls = Object.values(template.findResources('AWS::Lambda::Url'));
+    expect(JSON.stringify(urls)).not.toContain(logicalId);
+    const permissions = Object.values(template.findResources('AWS::Lambda::Permission'));
+    expect(JSON.stringify(permissions)).not.toContain(logicalId);
+  });
+
+  it('alarms onto the operator topic when a read fails, and only with one', () => {
+    const { logicalId } = lambdaFunction(mail, 'BotRoundsFn');
+    const alarm = Object.values(mail.findResources('AWS::CloudWatch::Alarm'))
+      .map((resource) => resource.Properties as Record<string, unknown>)
+      .find(({ Dimensions }) => JSON.stringify(Dimensions ?? null).includes(`"${logicalId}"`));
+    const [topicId] = Object.keys(mail.findResources('AWS::SNS::Topic'));
+    expect(alarm).toMatchObject({
+      Namespace: 'AWS/Lambda',
+      MetricName: 'Errors',
+      Statistic: 'Sum',
+      Period: 3600,
+      Threshold: 1,
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [{ Ref: topicId }],
+    });
+    lambdaFunction(mailTemplate(undefined), 'BotRoundsFn');
   });
 });
 

@@ -3,7 +3,8 @@ import { parseGroupConfig } from '../config/groupConfig';
 import { createLog } from '../log';
 import { memoryDeclarationStore, type Declaration } from '../domain/declarations';
 import { LlmUnavailable, type LlmProvider, type LlmResponse } from './types';
-import { COMMENTARY_MAX_CHARS, generateShareComment } from './shareComment';
+import { TRIED_WORDS_MAX } from '../puzzle/groupRounds';
+import { COMMENTARY_MAX_CHARS, EARLIER_LINES_MAX, generateShareComment, ownLinesOf } from './shareComment';
 import { FACT_JUDGE_SYSTEM } from './lineJudge';
 
 const GROUP = '120363000000000001@g.us';
@@ -181,5 +182,46 @@ describe('the spoken acknowledgement of a share is commentary from the numbers (
     const closed = provider([{ text: 'Sept, derrière Zou.' }]);
     expect(await generateShareComment(closed.provider, group, depsFor(await store()), log, async () => false)).toBeNull();
     expect(closed.calls).toHaveLength(0);
+  });
+
+  // THE WORDS THEY TRIED (2026-10-30): the sharer's far guesses, when the bot knows who
+  // they are, ride in the facts — the judge's too, so a joke about one is checked.
+  it('carries the sharer\'s odd words as "triedWords", capped, misses and the farthest first, for the writer AND the judge', async () => {
+    const farGuesses = Array.from({ length: 20 }, (_, i) => ({ try: i + 1, word: `mot${i}`, rank: i === 4 ? null : 200 + i }));
+    const sharer = Promise.resolve({ publicId: 'gabgabgabgab2345', name: 'Gab', started: true, tries: 7, progress: 100, solved: true, gaveUp: false, over: false, farGuesses });
+    const p = provider([]);
+    await generateShareComment(p.provider, group, { ...depsFor(await store()), sharer }, log);
+    const sent = JSON.parse(p.written()[0].messages[0].content);
+    expect(sent.triedWords).toHaveLength(TRIED_WORDS_MAX);
+    expect(sent.triedWords[0]).toEqual({ try: 5, word: 'mot4', rank: null });
+    expect(sent.triedWords.map((w: { try: number }) => w.try)).toEqual([...sent.triedWords.map((w: { try: number }) => w.try)].sort((a, b) => a - b));
+    expect(sent.triedWords.some((w: { word: string }) => w.word === 'mot19')).toBe(true);
+    expect(sent.triedWordsReading).toMatch(/nowhere near/);
+    const judgedFacts = p.calls.find((c) => c.system === FACT_JUDGE_SYSTEM)!.messages[0].content;
+    expect(judgedFacts).toContain('"triedWords"');
+    expect(p.written()[0].system).toContain('"triedWords"');
+    // No sharer known, or a lookup that failed: no words, the line still comes.
+    const none = provider([]);
+    expect(await generateShareComment(none.provider, group, { ...depsFor(await store()), sharer: Promise.reject(new Error('x')) }, log)).not.toBeNull();
+    expect(JSON.parse(none.written()[0].messages[0].content)).not.toHaveProperty('triedWords');
+  });
+
+  // THE VERB TIC (v24): the writer sees its own lines of the day; the judge, which checks
+  // claims, does not — an earlier line is nothing a claim may rest on.
+  it('shows the writer its own earlier lines of the day, and never the judge', async () => {
+    const p = provider([]);
+    await generateShareComment(p.provider, group, { ...depsFor(await store()), earlierLines: ['Cinq, Zou passe devant.'] }, log);
+    expect(JSON.parse(p.written()[0].messages[0].content).yourEarlierLines).toEqual(['Cinq, Zou passe devant.']);
+    expect(p.written()[0].system).toContain('"yourEarlierLines"');
+    expect(p.calls.find((c) => c.system === FACT_JUDGE_SYSTEM)!.messages[0].content).not.toContain('yourEarlierLines');
+    // Read off the day log: the bot's own turns only, the latest, cut to a line.
+    const turns = Array.from({ length: 14 }, (_, i) => ({
+      group: GROUP, day: DAY, at: i, id: `t${i}`, kind: (i % 2 ? 'bot' : 'said') as 'bot' | 'said', name: '', text: i === 13 ? 'x'.repeat(400) : `ligne ${i}`,
+    }));
+    const lines = ownLinesOf(turns);
+    expect(lines).toHaveLength(7);
+    expect(lines[0]).toBe('ligne 1');
+    expect(lines.at(-1)!.length).toBeLessThanOrEqual(COMMENTARY_MAX_CHARS);
+    expect(ownLinesOf(Array.from({ length: 30 }, (_, i) => ({ ...turns[1], id: `b${i}` })))).toHaveLength(EARLIER_LINES_MAX);
   });
 });

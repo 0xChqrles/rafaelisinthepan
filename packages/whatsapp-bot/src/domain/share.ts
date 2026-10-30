@@ -10,6 +10,11 @@ export interface DecodedShare {
   dayNumber: number;
   score: number; // unique tries — lower is better
   capped: boolean; // the run ended at ∞ (#214): recorded, never positioned
+  // A SIGNED share's trailing `/<publicId>` (`shared/invite.ts` `sharePath`): the account
+  // the web signed it with. A CLAIM, never an identity — anybody can paste anybody's link —
+  // so it names nobody until the Whippin group's own rounds agree with the token
+  // (`domain/playerIds.ts`). Never in a prompt: `withoutShares` strips it with the link.
+  publicId?: string;
 }
 
 export function escapeRegExp(s: string): string {
@@ -23,20 +28,30 @@ function shareLink(siteOrigin: string, flags: string): RegExp {
   return new RegExp(`https?://${escapeRegExp(host)}/${SHARE_SEGMENT}/`, flags);
 }
 
-// Every share link in a text, in order of appearance.
-export function findShareTokens(text: string, siteOrigin: string): string[] {
+// Every share link in a text, in order of appearance: its token, and the signature a
+// signed one carries. The id must END the segment (a slash, or anything that is not one of
+// its letters), so a longer run is not cut into an id.
+export function findShareLinks(text: string, siteOrigin: string): { token: string; publicId?: string }[] {
   const link = shareLink(siteOrigin, 'g');
   // Sticky, so it matches AT the character after a link rather than searching on from
   // there — and built per call: a module-level sticky regex carries its `lastIndex`
   // between callers as a hidden parameter.
   const token = new RegExp(SHARE_TOKEN_SOURCE, 'y');
-  const tokens: string[] = [];
+  const signature = new RegExp(`/(${PUBLIC_ID_SOURCE})(?![A-Za-z0-9_-])`, 'y');
+  const links: { token: string; publicId?: string }[] = [];
   for (const match of text.matchAll(link)) {
     token.lastIndex = match.index + match[0].length;
     const found = token.exec(text);
-    if (found) tokens.push(found[0]);
+    if (!found) continue;
+    signature.lastIndex = token.lastIndex;
+    const signed = signature.exec(text);
+    links.push(signed ? { token: found[0], publicId: signed[1] } : { token: found[0] });
   }
-  return tokens;
+  return links;
+}
+
+export function findShareTokens(text: string, siteOrigin: string): string[] {
+  return findShareLinks(text, siteOrigin).map((l) => l.token);
 }
 
 // THE GENERATED SHARE, AS THE WEB COMPOSES IT (`web/src/game/share.ts` `shareText`): a
@@ -93,7 +108,7 @@ export function withoutShares(text: string, siteOrigin: string): string {
 
 // A BONUS result (share token v7, shared bonus.ts) is no day's: it is never counted, so it
 // is not a share here — only its block is dropped from the text, like any share's.
-function decodeShare(token: string): DecodedShare | null {
+function decodeShare(token: string, publicId?: string): DecodedShare | null {
   const result = decodeResult(token);
   if (!result || result.dayNumber === undefined) return null;
   return {
@@ -102,6 +117,7 @@ function decodeShare(token: string): DecodedShare | null {
     dayNumber: result.dayNumber,
     score: result.score,
     capped: result.capped === true,
+    ...(publicId ? { publicId } : {}),
   };
 }
 
@@ -109,8 +125,8 @@ function decodeShare(token: string): DecodedShare | null {
 // is never a reason to do anything else with the message.
 export function sharesIn(text: string, siteOrigin: string): DecodedShare[] {
   const shares: DecodedShare[] = [];
-  for (const token of findShareTokens(text, siteOrigin)) {
-    const share = decodeShare(token);
+  for (const { token, publicId } of findShareLinks(text, siteOrigin)) {
+    const share = decodeShare(token, publicId);
     if (share) shares.push(share);
   }
   return shares;

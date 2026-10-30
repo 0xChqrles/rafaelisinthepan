@@ -187,6 +187,8 @@ describe('podium comments are commentary from the numbers (#236, #277)', () => {
     expect(comments.get('2')).toBe('Correct, sans plus.');
     const rewrite = writesFor(provider, 'Delphine').at(-1)!;
     expect(rewrite.messages[0].content).toContain('already opens with "pas mal"; open differently');
+    // v24: shown the line it echoed, and told to say it with another verb.
+    expect(rewrite.messages[0].content).toContain('say it with another verb than that line: "Pas mal pour un jeudi."');
   });
 
   it('comments the ∞ LINES too, as the lines the renderer prints (PR-278 review)', async () => {
@@ -268,5 +270,17 @@ describe('podium comments are commentary from the numbers (#236, #277)', () => {
     // outage of the judge does not blank every podium it lasts through.
     const down = answering({ Gab: ['Un phare dans la brume.', 'Bravo.'], Delphine: ['Deux.'], Zou: ['Trois.'] }, () => new LlmUnavailable('503'));
     expect((await generatePodiumComments(down, group, podium, context, none, log)).get('1')).toBe('Un phare dans la brume.');
+  });
+
+  // 2026-10-30: a poster the Whippin group verified carries their far words in their line's
+  // facts — the judge's too, which reads the same facts.
+  it('puts a verified poster\'s far words in THEIR line\'s facts only', async () => {
+    const provider = answering({ Gab: ['Un.'], Delphine: ['Deux.'], Zou: ['Trois.'] });
+    const gab = { publicId: 'gabgabgabgab2345', name: 'Gab', started: true, tries: 3, progress: 100, solved: true, gaveUp: false, over: false, farGuesses: [{ try: 1, word: 'girafe', rank: null }] };
+    await generatePodiumComments(provider, group, podium, context, none, log, Number.POSITIVE_INFINITY, new Map([['a', gab]]));
+    const facts = provider.requests.map((r) => factsIn(r.messages[0].content));
+    expect(facts.find((f) => f.who === 'Gab').triedWords).toEqual([{ try: 1, word: 'girafe', rank: null }]);
+    expect(facts.find((f) => f.who === 'Zou')).not.toHaveProperty('triedWords');
+    expect(provider.requests[0].system).toContain('"triedWords"');
   });
 });

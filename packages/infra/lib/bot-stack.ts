@@ -50,7 +50,7 @@ import * as sns from 'aws-cdk-lib/aws-sns';
 import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { NagSuppressions } from 'cdk-nag';
-import { TIME_ZONE } from '@whippin/shared';
+import { BOT_ROUNDS_FUNCTION_NAME, TIME_ZONE } from '@whippin/shared';
 import { readGroupConfigsForSynth, type GroupConfig } from '@whippin/whatsapp-bot/config';
 import { CONNECTED_METRIC } from '@whippin/whatsapp-bot/metrics';
 
@@ -167,6 +167,23 @@ export class BotStack extends Stack {
       resources: [llmKeyArn],
     });
 
+    // ── The game's read of the Whippin group's rounds (shared `botRounds.ts`) ─
+    // The backend stack's `BotRoundsFn`, addressed by its FIXED name: the ARN is formatted
+    // here, never imported, so this stack still shares nothing with the backend's and
+    // deploys on its own. Before that function exists the invoke is refused, and the bot
+    // carries no guesses — a degraded chat, not a broken one, so no deploy ordering.
+    const invokeBotRounds = new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [
+        this.formatArn({
+          service: 'lambda',
+          resource: 'function',
+          resourceName: BOT_ROUNDS_FUNCTION_NAME,
+          arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+        }),
+      ],
+    });
+
     const commonEnv = {
       BOT_TABLE: table.tableName,
       BOT_OUTBOUND_QUEUE_URL: outbound.queueUrl,
@@ -175,6 +192,7 @@ export class BotStack extends Stack {
       BOT_LLM_PROVIDER: llmProvider,
       BOT_LLM_MODEL: llmModel,
       BOT_LLM_API_KEY_PARAMETER: llmApiKeyParameter,
+      BOT_ROUNDS_FUNCTION: BOT_ROUNDS_FUNCTION_NAME,
     };
 
     // ── Alerts topic ─────────────────────────────────────────────────────────
@@ -242,6 +260,7 @@ export class BotStack extends Stack {
     outbound.grantConsumeMessages(taskDefinition.taskRole);
     outbound.grantSendMessages(taskDefinition.taskRole);
     taskDefinition.taskRole.addToPrincipalPolicy(readLlmKey);
+    taskDefinition.taskRole.addToPrincipalPolicy(invokeBotRounds);
     taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: ['cloudwatch:PutMetricData'],
@@ -327,6 +346,7 @@ export class BotStack extends Stack {
     table.grantReadWriteData(podium);
     outbound.grantSendMessages(podium);
     podium.addToRolePolicy(readLlmKey);
+    podium.addToRolePolicy(invokeBotRounds);
 
     // One schedule per group per scheduled act: the evening podium, the morning reminder
     // (user-decided 2026-09-05), and the DIARY rewrite (#277) — the same Lambda, told which
@@ -431,7 +451,7 @@ export class BotStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'DynamoDB access is scoped to the bot table (the grant\'s index wildcard names a table with no index); SQS to the one outbound queue; ssm:GetParameter to the one exact parameter ARN. cloudwatch:PutMetricData supports no resource-level scoping and is conditioned on the bot\'s own namespace.',
+            'DynamoDB access is scoped to the bot table (the grant\'s index wildcard names a table with no index); SQS to the one outbound queue; ssm:GetParameter to the one exact parameter ARN; lambda:InvokeFunction to the one exact BotRoundsFn ARN. cloudwatch:PutMetricData supports no resource-level scoping and is conditioned on the bot\'s own namespace.',
         },
       ],
       true,
@@ -446,7 +466,7 @@ export class BotStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'DynamoDB read/write scoped to the bot table (index wildcard on a table with no index); SQS send to the one outbound queue; ssm:GetParameter to the one exact parameter ARN.',
+            'DynamoDB read/write scoped to the bot table (index wildcard on a table with no index); SQS send to the one outbound queue; ssm:GetParameter to the one exact parameter ARN; lambda:InvokeFunction to the one exact BotRoundsFn ARN.',
         },
         {
           id: 'AwsSolutions-L1',

@@ -6,7 +6,7 @@
 
 The bot is a SOCIAL CONSUMER of Whippin's public share-token contract: one always-on
 WhatsApp account that records valid `…/s/<token>` shares (a signed share's trailing
-`/<publicId>` is ignored, and stripped with the link) as they arrive in configured
+`/<publicId>` is a claim the Whippin group's rounds verify, and is stripped with the link) as they arrive in configured
 groups, posts each group's daily podium, acknowledges each share, reads the whole day and
 answers when addressed — or, within a budget, when it has something to add — using the
 group's Whippin history as TOOLS, the WEB (search and page reading, when it was asked for
@@ -29,8 +29,12 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
                                 disconnect alarm imports it (`@whippin/whatsapp-bot/metrics`, dependency-free)
     src/domain/                 Whippin-side logic, Baileys-free:
       message.ts                InboundMessage — the bot's own inbound shape
-      share.ts                  find + decode share links (sentence tokens only); `withoutShares` — the text
-                                minus the whole generated share block (what may be remembered)
+      share.ts                  find + decode share links (sentence tokens only, a signed one's publicId
+                                captured); `withoutShares` — the text minus the whole generated share block
+                                (what may be remembered)
+      playerIds.ts              WHO IS WHO: sender JID → Whippin publicId per group (PLAYERID#<group> / <sender>),
+                                learnt only from a signed share the group's rounds verify (`agrees`); the
+                                sharer lookup ingest runs beside the acknowledgement
       day.ts                    parseDay — a "YYYY-MM-DD" a human or a model supplied, round-tripped
                                 through the shared pair so "2026-02-30" is refused, not rolled over
       declarations.ts           Declaration, the PRECEDENCE rule (`supersedes`), `inLanguage`, store interface, memory impl
@@ -63,10 +67,14 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
                                 the CONVERSATION's prompt — the KIND is sayable, the work is not; and the
                                 day's SENTENCE, held for the web's guard and never put in a prompt
     src/puzzle/spoilers.ts      the sentence as letter runs and its hidden words; `revealsSentence`
+    src/puzzle/groupRounds.ts   the Whippin group's rounds from the backend's BotRoundsFn (Lambda invoke over
+                                IAM), validated whole, cached LIVE_ROUNDS_TTL_MS in memory, one flight;
+                                `oddGuesses`, the far words worth a look
     src/chat/                   the conversation: trigger (addressed vs ambient, the EXCHANGE BUDGET), the
                                 group ceiling (limits), serial.ts (one conversation at a time per group), the
                                 DAY LOG (durable; the whole day in every prompt),
-                                the DIARY (one text per group, rewritten at the day flip), read-only tools +
+                                the DIARY (one text per group, rewritten at the day flip), liveState.ts (the
+                                Whippin group's live state, a data turn in every call), read-only tools +
                                 name resolution (one window constant: a tool never promises days it
                                 cannot read), the bounded tool-loop agent (a reply, a REACTION, or nothing),
                                 web.ts (the web tools and their guards), format.ts (a reply as WhatsApp
@@ -285,7 +293,7 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
   facts carry `score: "∞"` and the place after the last. **Two lines opening the same way** (`openingOf`,
   the first two words folded — "Pas mal pour…" opened four lines of one podium) are the
   tic parallel writers cannot see: the later one is written again once, told the opening
-  to avoid (`echoes`). `COMMENT_MAX_CHARS` = 160 (120 until 2026-09-14: with the form
+  to avoid and shown the line it echoed, with another verb asked for (`echoes`, v24). `COMMENT_MAX_CHARS` = 160 (120 until 2026-09-14: with the form
   facts — rivals, records — 30% of the old prompt's candidates and 51% of the new one's ran
   past 120 and were lost before the judge, on a podium that is EVERY LINE OR NONE; the
   writer is asked for "about fifteen words", not a character count it cannot keep): room
@@ -921,6 +929,57 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
     across five days it is 101-151 on every hole of every day, a generation constant with
     jitter that says where the HINT starts. Giving the bot difficulty means adding a field
     to the sentence schema and republishing: a generation + publish change, not a bot one.
+- **THE WHIPPIN GROUP'S GUESSES (user-decided 2026-10-30: the bot jokes about weird words
+  on share lines and carries every member's live state in every chat prompt).** The bot
+  reads the rounds of the Whippin group its config names (`whippinGroup`) from the
+  backend's `BotRoundsFn` (`shared/src/botRounds.ts`, the one contract; `puzzle/
+  groupRounds.ts`), invoked with `lambda:InvokeFunction` over the task's role
+  (`BOT_ROUNDS_FUNCTION`, default `BOT_ROUNDS_FUNCTION_NAME`) — no route, no CDN. What the
+  code decides:
+  - **CONSENT IS MEMBERSHIP of the Whippin group the config names**: the function answers
+    that group's members and nobody else, and a config with no `whippinGroup` reads nothing
+    at all. The privacy notice says so.
+  - **THE SPOILER RULE IS THE SERVER'S**: only a guess that never came as close as its
+    hole's start word (farther than `start_rank` on every secret, or a miss) ever leaves the
+    backend, on any day. The bot adds one check of its own: an answer holding a rank of 0,
+    or anything else off the contract, is refused WHOLE (`parseRoundsAnswer`) — a half-
+    trusted read is how a wrong number reaches a prompt.
+  - **CACHED A MINUTE, IN MEMORY ONLY** (`LIVE_ROUNDS_TTL_MS` = 60 s per (Whippin group,
+    language, date), one flight shared by concurrent askers, a failure held the same minute
+    so a down function is not asked at chat rate; a FRESH read — the sharer check's, a share
+    being posted the moment its round ends — skips the held answer and refills it). Nothing
+    read is written down; a failure
+    is null, logged by kind, with no guess, name or Whippin group id in the line.
+  - **WHO IS WHO** (`domain/playerIds.ts`): `PLAYERID#<group>` / `<sender JID>` → the
+    publicId, the sender's name snapshot and the message timestamp — the ONE thing stored.
+    Learnt only from a SIGNED share whose id is a member in the rounds of the share's own
+    (language, day) AND whose round agrees with the token (`agrees`: solved in exactly the
+    token's tries, or ended unsolved for a ∞ token); a forwarded share is never learnt from;
+    anything else is not stored (`players.unverified`, by kind). The latest verified share
+    wins (a ConditionExpression on the message timestamp). An unsigned share is read through
+    the stored link, and the round must still agree. A link whose account a successful
+    rounds read no longer names as a member (left the group, deleted the account) is
+    DELETED by the next live state that sees it (`pruneLinks`). The lookup runs BESIDE the
+    acknowledgement, bounded by `SHARER_BUDGET_MS` (3 s): it never holds an emoji back, and a
+    failure costs the mapping and the words, never the line.
+  - **THE SHARE LINE** gets the sharer's far words as `triedWords` (`TRIED_WORDS_MAX` = 12,
+    misses then the farthest ranks, try numbers kept, in play order) with a reading note; the
+    task may joke about ONE odd word when it is funny, never a word not in the facts, never a
+    guess at the answer. The fact judge sees the same JSON.
+  - **THE CONVERSATION** carries the group's live state for its language today in EVERY call,
+    as a USER turn marked as data (`chat/liveState.ts`; a Whippin name and a guess are typed
+    text, so never the system prompt), after the diary: every member by Whippin name (their
+    WhatsApp name too when mapped), started / tries / % / solved / ∞, and up to
+    `LIVE_WORDS_PER_MEMBER` (8) odd words each, within `LIVE_STATE_MAX_CHARS` (3000) — every
+    member listed before any words, a group too big counted ("and N more"). The system
+    prompt carries `LIVE_STATE_NOTE` (the state exists, its words are far from the answers by
+    construction, it never guesses or hints at the hidden words) only when the turn is there.
+    The read is bounded by `LIVE_STATE_TIMEOUT_MS` (3 s) inside the per-group serial section;
+    unavailable, there is no turn and nothing is said about it.
+  - **THE PODIUM** carries the same `triedWords` in the line of each poster the group
+    verified (`verifiedRoundsOf`: linked, and the round agreeing with the posted score; one
+    rounds read and one links read, bounded by `ROUNDS_BUDGET_MS` = 5 s inside the comment
+    budget), under the same rule (`TRIED_WORDS_RULE`).
 - **THE WEB (v22, user-decided 2026-10-18: "allow him to make web search and be much more
   versatile. You should feel like you're talking with an AGI. It should not be only focused
   on the game, and it should be much more free and have less constraints").** The
@@ -1016,6 +1075,18 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
     model copies what it reads), and `chat/format.ts` `plainPunctuation` takes out the ones
     it writes anyway, on every reply and every comment line (a long dash becomes a comma,
     or "- " opening a line; a semicolon a comma; hyphens and links untouched).
+  - **v24: VARIED VERBS** (user-decided 2026-10-30: "start using multiple different verbs
+    when commenting games", not always the same one). No prompt held the verb: it is the
+    model's own tic, so the fix is showing it what it already said and a rule, never an
+    in-code check of meaning. "How you write" says to vary how a result is said, never the
+    same verb or opening line after line; the share line is shown the bot's own lines of the
+    day (`yourEarlierLines`, `ownLinesOf`, off the day log, writer only — the judge checks
+    claims and an earlier line backs none) and told never to reuse their verb or opening; the
+    podium task says the same of the day's conversation, and an echoed opening's rewrite is
+    shown the line it echoed and told to use another verb. ONE verb is named, in that "How
+    you write" line alone: French "taper" for beating somebody, called worn out — shown its
+    own earlier lines, the model still reached for it to say "beat" (probed live), so it is
+    its default, not a repeat a list of lines can catch. No other verb is quoted anywhere.
 - **Privacy:** logs carry event kinds, hashed JIDs (`tag()`), message ids, day/score and
   provider latency — never a message body. A command id EMBEDS the JIDs it addresses, so
   every log of one goes through `redactJids`. **What reaches the model provider is two
@@ -1045,6 +1116,13 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
   member's own words as `ori_question`, never `localization`); the site behind a link then
   sees a request from DeepSeek's reader, and a member's link may carry what its URL
   carries. Nothing new is STORED, beyond the bot's own longer lines in the day log.
+  **Since 2026-10-30 a group whose config names a `whippinGroup` also sends the Whippin
+  group's ROUNDS** (`puzzle/groupRounds.ts`): on every conversation call, each member's
+  Whippin name, tries, %, solved / ∞ and up to eight far guesses (words that never came
+  closer than the start word, the server's rule); on a share line, the sharer's far
+  guesses; on the podium, each verified poster's far guesses. Members only — joining that Whippin group is the consent, which the privacy
+  notice states — and only the JID → publicId map (with a name snapshot) is STORED, until a
+  rounds read no longer names the account a member; the rounds stay in memory for a minute.
   **SINCE #277 (user-decided 2026-09-09) THE BOT STORES GROUP TEXT, AND THE WHOLE DAY
   REACHES THE PROVIDER ON EVERY MESSAGE.** Two decisions, recorded here because this bullet
   enumerates what is kept and what leaves: (1) the DAY LOG — every turn of a chat-enabled
@@ -1115,7 +1193,7 @@ pnpm --filter @whippin/whatsapp-bot test
 Env: `BOT_TABLE` (required), `BOT_OUTBOUND_QUEUE_URL` (absent = in-process queue, local
 only), `BOT_GROUPS_DIR`, `BOT_SITE_ORIGIN`, `BOT_API_BASE_URL`, `BOT_METRICS_NAMESPACE`, `BOT_LLM_PROVIDER`,
 `BOT_LLM_MODEL`, `BOT_LLM_API_KEY_PARAMETER` (SSM) or `BOT_LLM_API_KEY` (local only),
-`BOT_LLM_DAILY_CALL_CEILING`, `BOT_WEB_DAILY_CEILING`, `BOT_LOG_LEVEL`, `BOT_BAILEYS_LOG_LEVEL`, `BOT_AWS_REGION`.
+`BOT_LLM_DAILY_CALL_CEILING`, `BOT_WEB_DAILY_CEILING`, `BOT_ROUNDS_FUNCTION`, `BOT_LOG_LEVEL`, `BOT_BAILEYS_LOG_LEVEL`, `BOT_AWS_REGION`.
 
 **EVERY AWS client in this package is built against `botRegion()` (`config/env.ts`), PINNED
 to the deployment's `us-east-1` rather than inherited from the shell.** In ECS and Lambda
@@ -1143,8 +1221,8 @@ there is one region knob and not two.
   its non-optional peer; `link-preview-js` is its optional one, installed since 2026-09-14
   for the preview card (3.x: Baileys' `getUrlInfo` is written against `^3`, and 4/5 are
   out of that range).
-- **No group config names its `whippinGroup` yet** (2026-09-14): the invite line appears
-  once one is pushed to SSM and a deploy promotes it.
+- The reminder's invite line and the Whippin group's rounds (the guesses bullet) work only
+  for a group whose config names its `whippinGroup`, pushed to SSM and promoted by a deploy.
 - Proactive new-leader lines are implemented behind `leaderAnnouncements` (default off).
 - The eval fixture exists as a SCRIPT (#277, `pnpm bot:fixture`) and is NOT yet rated: the
   ratings are the user's, and the measurement of v4 against V4.1 waits on them. Not built:

@@ -20,6 +20,8 @@
                               `pnpm bot:groups pull` writes from SSM (group JIDs are not committed — this repo is
                               public). Absent/empty is a legitimate synth, since every cdk command here constructs
                               this stack; an empty one raises a synth WARNING, and `deploy-bot` pulls first.
+                              The task and the podium Lambda may invoke the backend's `BotRoundsFn` by its
+                              fixed shared name (formatted ARN, no cross-stack reference).
     lib/bot-stack.test.ts     synthesized contract: one task stop-before-start, no secrets in env, one schedule per
                               enabled group in its own time zone, no JID in a logical id, alarms treat silence as
                               down, and NO cdk-nag finding — `bin/app.ts` runs nag, where a finding is a failed synth
@@ -224,6 +226,19 @@
   an operator address, a `PurgeFnErrors` alarm (`Errors` ≥ 1 over a day, missing data not
   breaching) notifies the `MailAlerts` topic. The privacy notice's "within 7 days" rests on
   this schedule.
+- **The bot's rounds read (`BotRoundsFn`, shared `botRounds.ts`):** a third backend
+  `NodejsFunction` (`backend/src/botRoundsWorker.ts`) under the FIXED name
+  `BOT_ROUNDS_FUNCTION_NAME` (`whippin-bot-rounds`), 1769 MB (it parses the day's full
+  artifact, the API's CPU-bound work), 10 s, reserved concurrency 5, env `PUZZLE_BUCKET` +
+  `SCORE_TABLE` only, its own one-month log group. READ-ONLY: `bucket.grantRead` and the
+  table's `Query`/`GetItem`/`BatchGetItem` (`BOT_ROUNDS_TABLE_ACTIONS`) — no write, no Scan.
+  No Function URL, no CloudFront behavior, no resource permission: `BotStack` grants
+  `lambda:InvokeFunction` on the ARN it FORMATS from the name (task role and podium Lambda,
+  env `BOT_ROUNDS_FUNCTION`), so no stack exports anything to the other and no deploy order
+  is needed — a bot deployed first is refused the invoke and carries no guesses. With an
+  operator address, `BotRoundsFnErrors` (`Errors` ≥ 1 over an hour, missing data not
+  breaching, no OK action) notifies the `MailAlerts` topic. `backend-stack.test.ts` and
+  `bot-stack.test.ts` pin the name, the bounds, the read-only grants and the invoke grant.
 - **Mail plumbing (#230):** `lib/mail.ts`, two constructs inside `BackendStack`, both gated on
   `-c operatorEmail=` (no default — a personal address in a public repo; CI passes the
   `OPERATOR_EMAIL` repository SECRET, masked in the public job log, and FAILS the backend

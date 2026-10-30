@@ -21,6 +21,7 @@
 
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { LambdaClient } from '@aws-sdk/client-lambda';
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dateForDayNumber, dayNumber } from '@whippin/shared';
 import { dynamoDayLogStore, renderDay, type DayLogStore } from './chat/dayLog';
@@ -31,11 +32,13 @@ import { parseDay } from './domain/day';
 import { inLanguage, type DeclarationStore } from './domain/declarations';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
 import { nameResolver } from './domain/names';
+import { dynamoPlayerIdStore, verifiedRoundsOf, type PlayerIdStore } from './domain/playerIds';
 import { buildPodium, otherLanguages } from './domain/podium';
 import { renderPodium, renderReminder, type Comments } from './domain/podiumText';
 import { FORM_DAYS, buildPodiumContext } from './domain/shareContext';
 import { createWhippinGroupReader, groupInviteUrl, type WhippinGroupReader } from './domain/whippinGroup';
 import { createDaySourceReader, type DaySourceReader } from './puzzle/daySource';
+import { createGroupRoundsReader, lambdaRoundsInvoker, within, type GroupRoundsReader } from './puzzle/groupRounds';
 import { createLlmProvider, type LlmProvider } from './llm';
 import { generatePodiumComments, type PodiumBackground } from './llm/podiumComments';
 import { createLog, tag, type Log } from './log';
@@ -77,6 +80,10 @@ export interface PodiumJobDeps {
   // Absent, the podium is commented from the facts alone and the diary job is skipped.
   dayLog?: DayLogStore;
   diary?: DiaryStore;
+  // The Whippin group's rounds and who is who (2026-10-30): a verified poster's far words in
+  // their line's facts. Absent, or for a group naming no Whippin group, the facts go without.
+  rounds?: GroupRoundsReader;
+  playerIds?: PlayerIdStore;
 }
 
 const skipped = (group: string, dayNumber: number): PodiumJobResult => ({ outcome: 'skipped', group, dayNumber, lines: 0, comments: 0 });
@@ -87,6 +94,8 @@ const skipped = (group: string, dayNumber: number): PodiumJobResult => ({ outcom
 // killed before it is queued. Eighty leaves the reads and the enqueue their room; what
 // does not fit inside it is a round the podium goes without.
 const COMMENT_BUDGET_MS = 80_000;
+// How long the podium waits on the Whippin group's rounds before commenting without them.
+const ROUNDS_BUDGET_MS = 5_000;
 
 // THE MORNING REMINDER. Skipped — never a bare link — when the day is not published, and
 // when the read that would say so failed: inviting a group to a 404 is the one thing this
@@ -192,7 +201,14 @@ export async function runPodiumJob(event: PodiumJobEvent, deps: PodiumJobDeps): 
           },
         );
       }
-      comments = await generatePodiumComments(deps.provider, group, podium, context, background, deps.log, startedAt + COMMENT_BUDGET_MS);
+      // The words they tried, for the posters the Whippin group knows: a read that is slow or
+      // fails costs those words, never a comment.
+      const verified =
+        deps.rounds && deps.playerIds
+          ? ((await within(verifiedRoundsOf({ rounds: deps.rounds, playerIds: deps.playerIds, log: deps.log }, group, group.language, day, rows), ROUNDS_BUDGET_MS)) ??
+            new Map())
+          : new Map();
+      comments = await generatePodiumComments(deps.provider, group, podium, context, background, deps.log, startedAt + COMMENT_BUDGET_MS, verified);
     } catch (error) {
       deps.log.warn({ event: 'podium.facts_failed', group: tag(group.id), error: (error as Error).message }, 'could not read the facts; podium without comments');
     }
@@ -293,6 +309,8 @@ async function buildDeps(): Promise<BuiltDeps> {
       whippinGroups: createWhippinGroupReader({ apiBaseUrl: env.apiBaseUrl, log }),
       dayLog: dynamoDayLogStore(dynamo, env.table),
       diary: dynamoDiaryStore(dynamo, env.table),
+      rounds: createGroupRoundsReader({ invoke: lambdaRoundsInvoker(new LambdaClient({ region: botRegion() }), env.roundsFunction), log }),
+      playerIds: dynamoPlayerIdStore(dynamo, env.table),
     },
     providerFailed,
   };
