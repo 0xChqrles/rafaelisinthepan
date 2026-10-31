@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { activeDate, anonName, generatePublicId, ROUND_GUESS_CAP, type Puzzle } from '@whippin/shared';
-import { farGuesses, readBotRounds, type BotRoundsDeps } from './botRounds';
+import { FAR_RANK_MIN, farGuesses, readBotRounds, type BotRoundsDeps } from './botRounds';
 import { memoryGroupStore } from './memoryGroupStore';
 import { memoryProfileStore } from './memoryProfileStore';
 import { memoryRoundStore } from './memoryRoundStore';
@@ -10,7 +10,7 @@ import type { PuzzleStore } from './store';
 
 // CONTRACT (root AGENTS.md, shared `botRounds.ts`): the bot's read of a Whippin group's
 // rounds. What is asserted is the SPOILER RULE — a guess leaves only when, for EVERY secret,
-// it is unranked or ranked strictly farther than that secret's start word — plus the
+// it is unranked or ranked strictly farther than FAR_RANK_MIN (and its secret's start) — plus the
 // members-only read, the countTries dedup of the try index, and the current-revision rule.
 
 const NOW = new Date('2026-10-30T12:00:00Z');
@@ -18,10 +18,11 @@ const DATE = activeDate(NOW);
 const GROUP = 'gggggggggggggggg';
 
 // Two secrets, start ranks 3 and 2; `phare` appears in two holes sharing one start.
-//   rive  — phare rank 4 (> 3), unranked in nuit         -> FAR
+//   rive  — phare rank 1001 (> 1000), unranked in nuit    -> FAR
 //   quai  — phare rank 3 (= start)                        -> near, never emitted
-//   ombre — phare rank 9 (far), nuit rank 1 (near)        -> near in ONE map, never emitted
-//   aube  — phare rank 5, nuit rank 4 (both far)          -> FAR, closest group's display
+//   loin  — phare rank 1000 (past the start, = the floor) -> near, never emitted
+//   ombre — phare rank 1009 (far), nuit rank 1 (near)     -> near in ONE map, never emitted
+//   aube  — phare rank 1005, nuit rank 1001 (both far)    -> FAR, closest group's display
 //   mers  — `mer`'s alias, phare rank 1                    -> near
 const ARTIFACT: Puzzle = {
   lang: 'fr',
@@ -38,16 +39,17 @@ const ARTIFACT: Puzzle = {
       mer: { word: 'mer', rank: 1, dq: 255 },
       mers: { word: 'mer', rank: 1, dq: 255 },
       quai: { word: 'quai', rank: 3, dq: 200 },
-      rive: { word: 'rive', rank: 4, dq: 150 },
-      rives: { word: 'rive', rank: 4, dq: 150 },
-      aube: { word: 'aube', rank: 5, dq: 100 },
-      ombre: { word: 'ombre', rank: 9, dq: 0 },
+      rive: { word: 'rive', rank: 1001, dq: 150 },
+      rives: { word: 'rive', rank: 1001, dq: 150 },
+      loin: { word: 'loin', rank: 1000, dq: 120 },
+      aube: { word: 'aube', rank: 1005, dq: 100 },
+      ombre: { word: 'ombre', rank: 1009, dq: 0 },
     },
     nuit: {
       nuit: { word: 'nuit', rank: 0 },
       ombre: { word: 'ombre', rank: 1, dq: 255 },
       soir: { word: 'soir', rank: 2, dq: 128 },
-      aube: { word: 'aubé', rank: 4, dq: 0 },
+      aube: { word: 'aubé', rank: 1001, dq: 0 },
     },
   },
 };
@@ -98,8 +100,13 @@ describe('farGuesses — the spoiler rule', () => {
     expect(far).toEqual([]);
   });
 
-  it('emits a guess one rank past the start, with its closest group display', () => {
+  it('emits a guess one rank past FAR_RANK_MIN, with its closest group display', () => {
+    expect(FAR_RANK_MIN).toBe(1000);
     expect(farGuesses(ARTIFACT, ['rive'])).toEqual([{ try: 1, word: 'rive' }]);
+  });
+
+  it('withholds a guess past its start but within FAR_RANK_MIN', () => {
+    expect(farGuesses(ARTIFACT, ['loin'])).toEqual([]);
   });
 
   it('withholds a word far in one map but near in another', () => {
@@ -107,7 +114,7 @@ describe('farGuesses — the spoiler rule', () => {
   });
 
   it('names a word far everywhere by its CLOSEST group', () => {
-    // nuit ranks it 4 (`aubé`), phare 5 (`aube`): the closer map's display wins.
+    // nuit ranks it 1001 (`aubé`), phare 1005 (`aube`): the closer map's display wins.
     expect(farGuesses(ARTIFACT, ['aube'])).toEqual([{ try: 1, word: 'aubé' }]);
   });
 
@@ -123,7 +130,7 @@ describe('farGuesses — the spoiler rule', () => {
   it('numbers tries like countTries: near tries count, duplicates and aliases do not', () => {
     const far = farGuesses(ARTIFACT, ['mer', 'rive', 'mers', 'zzz', 'rives', 'zzz', 'quai', 'aube']);
     // Unique tries: mer(1) rive(2) zzz(3) quai(4) aube(5) — `mers`/`rives`/`zzz` repeat.
-    // Oddest first: the miss, then rank 4 twice, the earlier try first.
+    // Oddest first: the miss, then rank 1001 twice, the earlier try first.
     expect(far).toEqual([
       { try: 3, word: 'zzz' },
       { try: 2, word: 'rive' },
@@ -132,12 +139,12 @@ describe('farGuesses — the spoiler rule', () => {
   });
 
   it('hands the words back ODDEST FIRST: misses, then the farthest rank, ties by the earlier try', () => {
-    // Closest ranks: rive 4, aube 4 (via nuit), plus a far word at 9 in both maps.
+    // Closest ranks: rive 1001, aube 1001 (via nuit), plus a far word at 1009 in both maps.
     const wide: Puzzle = {
       ...ARTIFACT,
       ranks: {
-        phare: { ...ARTIFACT.ranks.phare, loin: { word: 'loin', rank: 9, dq: 0 } },
-        nuit: { ...ARTIFACT.ranks.nuit, loin: { word: 'loin', rank: 9, dq: 0 } },
+        phare: { ...ARTIFACT.ranks.phare, loin: { word: 'loin', rank: 1009, dq: 0 } },
+        nuit: { ...ARTIFACT.ranks.nuit, loin: { word: 'loin', rank: 1009, dq: 0 } },
       },
     };
     const far = farGuesses(wide, ['aube', 'rive', 'loin', 'zzz', 'yyy']);
@@ -157,7 +164,7 @@ describe('farGuesses — the spoiler rule', () => {
   });
 
   it('fails closed on a ranked map whose secret no hole names', () => {
-    const odd: Puzzle = { ...ARTIFACT, ranks: { ...ARTIFACT.ranks, ghost: { rive: { word: 'rive', rank: 900, dq: 0 } } } };
+    const odd: Puzzle = { ...ARTIFACT, ranks: { ...ARTIFACT.ranks, ghost: { rive: { word: 'rive', rank: 5000, dq: 0 } } } };
     expect(farGuesses(odd, ['rive'])).toEqual([]);
   });
 });

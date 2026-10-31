@@ -79,9 +79,13 @@ function startRanks(puzzle: Puzzle): Map<string, number> {
   return starts;
 }
 
+// How close a guess may rank and still leave: a start word sits around rank 100–200, and a
+// guess a few hundred ranks from a secret already gives it away.
+export const FAR_RANK_MIN = 1000;
+
 // THE SPOILER RULE over one round's raw log: every UNIQUE try (the `countTries` dedup —
-// `try` is the number the player saw), kept only when no map ranks it at or inside its
-// secret's start, and handed back ODDEST FIRST (misses, then farthest; the contract's
+// `try` is the number the player saw), kept only when no map ranks it at or inside
+// `FAR_RANK_MIN` (or its secret's start, were that farther), and handed back ODDEST FIRST (misses, then farthest; the contract's
 // order) with no rank: the rank orders, the word is what leaves. A map with no start rank to compare against (no hole
 // names that secret — never in a published artifact) treats every ranked word as near: the
 // rule fails closed.
@@ -101,7 +105,7 @@ export function farGuesses(puzzle: Puzzle, log: readonly string[]): BotGuess[] {
       const map = puzzle.ranks[secret];
       const entry = Object.hasOwn(map, typed) ? map[typed] : undefined;
       if (!entry) continue;
-      if (entry.rank <= (starts.get(secret) ?? Infinity)) {
+      if (entry.rank <= Math.max(FAR_RANK_MIN, starts.get(secret) ?? Infinity)) {
         near = true;
         break;
       }
