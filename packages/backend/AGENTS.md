@@ -799,8 +799,8 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   `roundEnded`); an unpublished day is `revision: null`, nobody started. Names: the profile
   name, else `anonName`. **THE SPOILER RULE (`farGuesses`):** the unique tries (`guessKey`
   dedup, `try` 1-based over ALL unique tries), kept only when EVERY map
-  either does not rank the guess or ranks it STRICTLY greater than its secret's
-  `start_rank` (secrets by slug; a map no hole names fails closed) — on any day. `word` is
+  either does not rank the guess or ranks it STRICTLY greater than `FAR_RANK_MIN` (1000)
+  and its secret's `start_rank` (secrets by slug; a map no hole names fails closed) — on any day. `word` is
   the closest group's display, a miss's the folded string. **No rank leaves** (user-decided
   2026-10-31): the min rank only ORDERS the list, oddest first — misses, then the farthest,
   ties by the earlier try. The log line carries the outcome and counts, never a guess or a name.
