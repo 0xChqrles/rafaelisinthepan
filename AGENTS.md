@@ -931,7 +931,7 @@ The live routes then share:
   module, `shared/src/botRounds.ts`. It answers each member's round of one daily (started,
   tries, %, solved, ∞) and their FAR guesses. **Consent is membership** of that group: only
   its members' rows are read. **The spoiler rule is the SERVER's** (`farGuesses`): a guess
-  any map ranks within 1000 (`FAR_RANK_MIN`, or its hole's `start_rank` if farther) never
+  any map ranks within 5000 (`FAR_RANK_MIN`, or its hole's `start_rank` if farther) never
   leaves the backend, on any day;
   the bot refuses a whole answer off the contract. The bot records which WhatsApp sender is
   which publicId (its own table, nothing on the account) only from a VERIFIED signed share —
