@@ -80,8 +80,8 @@ function startRanks(puzzle: Puzzle): Map<string, number> {
 }
 
 // How close a guess may rank and still leave: a start word sits around rank 100–200, and a
-// guess a few hundred ranks from a secret already gives it away.
-export const FAR_RANK_MIN = 1000;
+// guess ranked a thousand or two from a secret still gives it away.
+export const FAR_RANK_MIN = 5000;
 
 // THE SPOILER RULE over one round's raw log: every UNIQUE try (the `countTries` dedup —
 // `try` is the number the player saw), kept only when no map ranks it at or inside
