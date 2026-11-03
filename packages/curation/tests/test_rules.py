@@ -8,20 +8,13 @@ from rules import (
     MAX_COMMON_RANK,
     MAX_COMMON_RANK_ADV,
     PLAIN_WORD_RANK,
-    BURIED_CROWD,
-    BURIED_WOULD_SAY,
-    CROWD_N,
     TWIN_RANK,
     WEAK_VERBS,
     WOULD_SAY_HARD,
     Token,
-    buried,
-    crowd_share,
     initial_candidates,
     is_twin,
     HANDED_RANK,
-    READER_FAR_RANK,
-    far_note,
     map_handed,
     neighbourhood,
     map_nearest_filler,
@@ -142,25 +135,6 @@ def test_with_its_map_the_same_word_is_what_typing_finds():
     assert same_word(tablee, "table")           # without its map, the spelling is all there is
 
 
-def test_the_crowd_is_the_share_of_the_nearest_groups_commoner_than_the_secret():
-    index = {"charnier": 5000, "cimetiere": 900, "ossuaire": 9000, "fosse": 1200, "tombe": 800, "zzz": None}.get
-    rank_map = {"charnier": {"rank": 0}, "charniers": {"rank": 0}, "cimetiere": {"rank": 1}, "ossuaire": {"rank": 2},
-                "fosse": {"rank": 3}, "tombe:nc": {"rank": 4}, "zzz": {"rank": 5}}
-    assert crowd_share(rank_map, index) == 0.75          # 3 of the 4 known neighbours are commoner
-    assert crowd_share({"x": {"rank": 1}}, index) is None  # no secret group
-    far = {"charnier": {"rank": 0}, **{f"w{i}": {"rank": i} for i in range(1, CROWD_N + 10)}}
-    assert crowd_share(far, lambda s: 1 if s.startswith("w") and int(s[1:]) > CROWD_N else 9000 if s.startswith("w")
-                       else 5000) == 0.0             # only the CROWD_N nearest groups count
-
-
-def test_a_buried_word_is_half_said_and_in_a_crowd_a_rare_name_is_not():
-    # User-decided 2026-10-08: « charnier » (0.475, 22 of 30 commoner) is buried; « saint-bernard »
-    # (0.575, 25 of 30) is a rare name players say; « clodos » has no crowd big enough.
-    assert (BURIED_WOULD_SAY, BURIED_CROWD) == (0.50, 0.70)
-    assert buried(0.475, 22 / 30) and not buried(0.575, 25 / 30) and not buried(0.38, 0.5)
-    assert not buried(None, 0.9) and not buried(0.3, None)
-
-
 def test_the_english_weak_verbs_are_the_french_list_translated():
     # #317: the user's French list (2026-09-08), word for word — dire, croire, penser,
     # savoir, sembler, paraître, vouloir, pouvoir, devoir, falloir, trouver, avoir, être,
@@ -271,19 +245,6 @@ def test_the_secret_and_its_variants_are_not_their_own_filler_in_the_map():
     assert map_nearest_filler(MAP, "heros", ["héros"]) is None
 
 
-def test_a_reader_word_far_on_the_map_notes_a_line_that_gives_little():
-    # « tutoyer » (« commander » at 759) and « cercueil » (« parquet » at 1010): the user's
-    # rounds made no progress (2026-10-14). The note states the fact; which start the hole
-    # takes is the taste's call, never the note's.
-    assert READER_FAR_RANK == 500
-    note = far_note(map_nearest_filler(MAP, "heros", ["type"]))           # 900
-    assert note and f"past rank {READER_FAR_RANK}" in note and "direct meaning" not in note
-    assert far_note(map_nearest_filler(MAP, "heros", ["gars"])) == note   # past the map
-    assert far_note(map_nearest_filler(MAP, "heros", ["garçon", "type"])) is None   # 404
-    assert far_note(("mot", READER_FAR_RANK)) is None
-    assert far_note(None) is None                                          # no word to type
-
-
 def test_the_reader_s_word_at_the_top_of_the_map_hands_the_hole_over():
     # « pou » at 1 for « morpion », « mourir » at 1 for « partir » (2026-10-12)
     assert HANDED_RANK == 3
@@ -367,7 +328,6 @@ MAIN, A, B = hole("pigeons", path_words=frozenset({"pratique"})), hole("eleveur"
     (hole("pigeons", neighbours="le droit de ___"), "the words right around it write it in (« le droit de ___ »)"),
     (hole("pigeons", map_handed=3), "sits at rank 3 on its map"),
     (hole("pigeons", unmapped=("chaîne",)), "« chaîne »"),
-    (hole("pigeons", buried=True), "buried"),
     (hole("pigeons", band_empty=True), "no start word in its band"),
 ])
 def test_a_fact_against_the_main_word_refuses_it(main, refused):
@@ -385,7 +345,6 @@ def test_a_main_word_with_nothing_against_it_passes(main):
 
 
 @pytest.mark.parametrize("other, refused", [
-    (hole("eleveur", buried=True), "buried"),
     (hole("eleveur", unmapped=("x",)), "is on its map"),
     (hole("eleveur", mirror=True), "a mirror"),
     (hole("eleveur", lottery="no smaller family a start can name"),
@@ -409,9 +368,14 @@ def test_a_reader_writing_another_word_in_is_no_fault_alone():
     assert trio_faults([MAIN, hole("eleveur", reader_writes=True), B])["others"] == {}
 
 
+def test_words_players_don_t_say_are_notes_never_a_fact_against_the_trio():
+    # User-decided 2026-10-22: how many such words a day may hold is the taste's; how hard the
+    # day plays is the difficulty forecast's.
+    unsaid = [hole("pigeons", unsaid=True), hole("eleveur", unsaid=True), hole("naturelles", unsaid=True)]
+    assert trio_faults(unsaid) == {"main": None, "others": {}, "trio": []}
+
+
 @pytest.mark.parametrize("holes, told", [
-    ([MAIN, hole("eleveur", unsaid=True), hole("naturelles", unsaid=True)], "2 words players don't say"),
-    ([hole("pigeons", unsaid=True), hole("eleveur", unsaid=True), B], "2 words players don't say"),
     ([MAIN, hole("eleveur", reader_writes=True), hole("naturelles", map_handed=2)], "hands over 2 of its words"),
     ([hole("pigeons", path_words=frozenset({"eleveur"})), A, B], "every word the path to « pigeons » runs through"),
     ([MAIN, hole("eleveur", path_words=frozenset({"pigeons", "naturelles"})), B], "the path to « eleveur »"),

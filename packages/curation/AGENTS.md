@@ -30,8 +30,10 @@
       llm.py                 the questions asked of Claude + JSON parsing; TASTE is read whole from
                              the `taste` skill, the practical laws from `find-sentences`, at run time;
                              the taste's seven kinds by number (`KINDS`)
-      jev.py                 the two questions asked of TypeSafe's Jev: the sentence filter and the
-                             giveaway (client, per-language templates, thresholds; stdlib, tested)
+      difficulty.py          the DIFFICULTY FORECAST: each hidden word read for its difficulty, the
+                             calibration on the play record, the forecast and the aim (stdlib, tested)
+      jev.py                 the one question asked of TypeSafe's Jev: the sentence filter (client,
+                             per-language templates, thresholds; stdlib, tested)
       shelf.py               LANGS, the shelves, their index, and what a language's archive already
                              holds (read off the PUBLISH LEDGER, packages/generation/published.jsonl)
       _paths.py              path wiring (generation + benchmark scripts on sys.path), shelf_dir(lang)
@@ -43,6 +45,7 @@
     bank/<lang>.jsonl        GITIGNORED: banked lines, read and finished but for their puzzle, and the lines
                              set aside with why (`--bank`, `--rebank`; scripts/bank.py),
     bank/<lang>.md           read here by kind (SPOILERS); `--finish <id>` makes one a candidate day
+    reads.jsonl              GITIGNORED: every difficulty read, kept by its question's hash (spoilers)
     tests/                   pytest, dependency-free (rules, sentences, epub, lyrics); the LLM never runs
     pyproject.toml, uv.lock  claude-agent-sdk, spacy + fr_core_news_md + en_core_web_md (URL wheels),
                              gensim/numpy, lyricsgenius
@@ -56,8 +59,8 @@ pnpm curate [--lang fr|en] [--work <file on the shelf>] [--retry <shelf file | p
 #   goes by its EDITION's language), the ARCHIVE (the ledger's lines of that language) and
 #   the VECTORS (generation's `embedding_neighbors.for_lang`); the two languages share nothing
 #   (#317, user-decided 2026-09-25).
-#   Needs JEV_API_KEY in the environment: Jev's sentence filter and giveaway scores
-#   (`jev.py`) ask it. gen_phrase asks no judge.
+#   Needs JEV_API_KEY in the environment: Jev's sentence filter (`jev.py`) asks it. gen_phrase
+#   asks no judge.
 #   Picks a work BY RULE (no model call: `curate.pick_work` —
 #   off the shelf minus the archive minus index.json minus the artist cooldown, a song
 #   when no music day is within MUSIC_EVERY_DAYS = 4 or no book is left, else a book,
@@ -93,22 +96,25 @@ pnpm curate [--lang fr|en] --bank N [--work <file>] [--blind]
 #   maps (`curate.line_map`: the maps its puzzle will have) by the run's own start step and
 #   checks (`curate.bank_line` on an in-memory draft, `static_draft`; a word chosen against
 #   the main word that no start saves is refused and two words chosen again, within the
-#   line's COMPANION_ASKS) — and appended to bank/<lang>.jsonl with its read, the taste it was
+#   line's COMPANION_ASKS), then each word READ for its difficulty (`difficulty`, below: six
+#   calls a line, a companion forecast as a wall told back once) — and appended to
+#   bank/<lang>.jsonl with its read, the taste it was
 #   read under (`bank.taste_stamp`: the taste and find-sentences skills, hashed before the
 #   work's lines are read), its three words — the main word first, each with its role, its
 #   path and the words it runs through, its ladder when it is one of a wide kind, its facts
 #   and its start with its rank — each word's other-sense check (`senses`: the sense the line
-#   uses, whether its map carries it, why, the words set aside) and what it was measured at.
-#   A line SET ASIDE on the way (by its read, its giveaway, its main word, the two words
-#   against it, or its start words) is appended too, with why (`dropped`), its read, the
-#   giveaways paid, what was measured and the other-sense checks asked (`bank.aside`): it
-#   counts as mined and is never finished. Nothing is compared or written as a puzzle.
+#   uses, whether its map carries it, why, the words set aside), what it was measured at and
+#   its words' difficulty reads with the question's stamp (`difficulty`). A line SET ASIDE on
+#   the way (by its read, its main word, the two words against it, or its start words) is
+#   appended too, with why (`dropped`), its read, what was measured and the other-sense checks
+#   asked (`bank.aside`): it counts as mined and is never finished. Nothing is compared or written as a puzzle.
 #   bank/<lang>.md (`bank.render`, SPOILERS) lists the lines kept BY KIND — the taste's seven
 #   in order, then No kind — each with its id, its source, its main word and the visible words
 #   its path runs through, its ladder, the sibling warning, each of the two words chosen
-#   against it with its path, and the line as it opens with each word's start, its rank, its
-#   facts and how many words of another sense its map lost (the main word in bold); then the
-#   lines set aside, each with why; then the lines waiting for `--rebank` (their words to
+#   against it with its path, the line as it opens with each word's start, its rank, its
+#   facts and how many words of another sense its map lost (the main word in bold), and its
+#   difficulty forecast under the aim (today's calibration, reads asked today's question);
+#   then the lines set aside, each with why; then the lines waiting for `--rebank` (their words to
 #   choose, or their other-sense check). The works keep the calendar's shape
 #   (`curate.bank_pick`: one song per MUSIC_EVERY_DAYS works, an artist's next song once
 #   ARTIST_COOLDOWN_DAYS more works are banked, authors spread; songs held back only until
@@ -132,42 +138,47 @@ pnpm curate [--lang fr|en] --finish <id> [--blind]
 #   on the FIRST run, never chosen again unless the sorted map moved one: a banked start
 #   gen_phrase refuses (removed), or one out of its band on the written map, is re-picked
 #   there by the model; then `check_starts`' rounds on the written puzzle, since the
-#   archive's start blacklist may have moved and the agreed forms are known only now). No
-#   paid step: Jev is not asked, no JEV_API_KEY needed. A line found UNBUILDABLE stops with
+#   archive's start blacklist may have moved and the agreed forms are known only now), and
+#   the written puzzle's words read once more for its difficulty forecast, logged with the
+#   aim (a blind run names the words by their place). No paid step: Jev is not asked, no
+#   JEV_API_KEY needed. A line found UNBUILDABLE stops with
 #   why, nothing swapped; so does a moved start whose band offers none, and a fact against
 #   the trio on the written map (`curate.banked_fault`, code alone), logged « rebank it ».
 #   Never publishes.
 pnpm curate [--lang fr|en] --rebank [--work <file>] [--blind]
 #   TAKES the bank's lines again under today's taste, in place (`curate.rebank_works`): every
-#   line with its giveaways stored never read, or read under another taste stamp, or read
-#   under this one and kept with words not chosen the main word first or without their
-#   other-sense check (`bank.stale`). Never reads the shelf, never asks the judge (no
-#   JEV_API_KEY needed: the giveaways and the measures are the ones stored at banking), never
-#   runs gen_phrase. Each line is
+#   line never read, or read under another taste stamp, or read under this one and kept with
+#   words not chosen the main word first or without their other-sense check (`bank.stale`).
+#   Never reads the shelf, never asks the judge (no JEV_API_KEY needed: the measures are the
+#   ones stored at banking), never runs gen_phrase. Each line is
 #   parsed again, its sentence or its work published since (`--finish` refuses either), or
-#   fewer than TRIO words to hide among those judged at banking, set aside with no call; else
-#   READ (`curate.read`, one call) unless its read is today's, shown every word judged at
-#   banking at or above the floor (`bank.pool`), those in their cooldown INCLUDED: the read
+#   fewer than TRIO words it can hide, set aside with no call; else
+#   READ (`curate.read`, one call) unless its read is today's, shown every word it can hide
+#   (`bank.pool`), those in their cooldown INCLUDED: the read
 #   is a lasting verdict on the line, the cooldown a fact of the day. Then its words are
 #   CHOSEN again, the main word first, as a run chooses them (`curate.anchor_gate`,
 #   `curate.choose_others`), from the words its read leaves and out of their cooldown, and
 #   its start words on their line maps (`curate.bank_line`): no measure nor other-sense
 #   check stored is asked again, a hole's neighbours answer only when its fragment changed.
 #   The line gains its read, the stamp (taken before the reads: a taste edited meanwhile
-#   takes them again) and its new words, or is set aside with why — its read, giveaways,
-#   measures and other-sense checks kept either way, so a later rebank takes it again with
-#   no judge; it keeps when it was banked. A line
+#   takes them again), its new words and their difficulty reads, or is set aside with why —
+#   its read, measures and other-sense checks kept either way; it keeps when it was banked. A line
 #   with no usable reading (`READ_ROUNDS` told back), or whose main word (or enough of its
 #   words to leave it short) is in its cooldown, or set aside after its main word passed
 #   while a word in its cooldown was left out (the words against it were chosen without
-#   it), is left as it was, for a later rebank. A line set aside before its giveaway was paid
-#   is never taken again: nothing it could hide was judged. Works are claimed as `--bank`
+#   it), is left as it was, for a later rebank. Works are claimed as `--bank`
 #   claims them (processes side by side), each work's entries rewritten in place under the
 #   lock (`bank.replace_work`: a temporary file renamed
 #   over the bank, every other work untouched and in order), the page rendered after each,
 #   under the lock. A work whose rebanking fails is released; two failures in a row stop the
 #   process. Resumable and idempotent: exit 2 when nothing was left to take. Copy
 #   bank/<lang>.jsonl first (gitignored).
+pnpm curate --calibrate
+#   READS every played day of the PLAY RECORD (root AGENTS.md; `pnpm puzzle:played --s3`
+#   appends it, with the user's OK) not yet read under today's question, every language at
+#   once, WORKERS days at a time, then FITS the calibration and logs it in plain numbers: how
+#   close a day's forecast comes, how much harder English words play, and how the fit does
+#   on the latest DRIFT_DAYS (28) of French play it did not see. Needs no ledger nor Jev.
 pnpm shelf:lyrics [--lang fr] [--artists shelf/<lang>/artists.txt] [--max-songs N]
 #   The music source (#262): for each artist of the user's hand-written list, the songs
 #   from Genius most viewed first, minus the top FAMOUS_SHARE (the singles), minus what
@@ -195,8 +206,8 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   kind, the three words, the start words, difficulty). Code keeps only FACTS — which words
   can be hidden, the cooldowns, the famous line, valid grammar, the puzzle format — and
   turns everything it MEASURES into notes the model reads; nothing measured refuses a word
-  but the giveaway FLOOR (`curate.floor`) and the facts `rules.trio_faults` names, by role
-  (below): the BURIED, NEIGHBOURS and UNMAPPED rules and an empty start band on every hole,
+  but the facts `rules.trio_faults` names, by role
+  (below): the NEIGHBOURS and UNMAPPED rules and an empty start band on every hole,
   the main word handed, a word right beside the main word — and the model's own verdicts on
   a word it chose (a mirror, a lottery) and its other-sense verdict on a hidden word (a map
   that barely carries the line's sense, or no verdict: `curate.sense`, user-decided
@@ -217,9 +228,8 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   hanging on a name or a pronoun, the flat ones). No ordering, no cap: sorting by the image
   score favoured description, and on a big book the 600-line cap left hundreds of lines
   unread. A run that asks Jev (`--bank`, a normal run) dies without the key before any
-  model call. Jev is asked two things and no more (`jev.py`): this sentence filter and the
-  giveaway (below), the French requests byte-identical to the calibrated ones. It orders no
-  map: a hidden word's map is its plain map with its other sense moved (below).
+  model call. Jev is asked this one thing (`jev.py`), the French requests byte-identical to
+  the calibrated ones. It orders no map: a hidden word's map is its plain map with its other sense moved (below).
 - **The model shortlists with taste, then CHOOSES THE DAY AMONG FINISHED LINES**
   (user-decided 2026-10-13: a line chosen before its checks ran was hollowed out by its
   swaps, and the rest of the shortlist was never looked at). It reads every kept line,
@@ -230,24 +240,27 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   (10) lines at a time, `WORKERS` (5) in parallel (`curate.candidate`; the subscription's
   conflicting credentials are removed once around the whole block, `llm.subscription_only`,
   since each call's own removal would be restored under the others): the line is READ
-  (below; a line the read sets aside goes no further and pays no judge), the judge's
-  giveaway is paid for the words it can hide (the floor, below), then its words are chosen
-  THE MAIN WORD FIRST (below, `curate.choose_trio`). `llm.choose_among` then COMPARES the
-  lines that survived, each as the player will get it — the line with its words in
-  brackets, its kind, its main word and the two chosen against it, what leads to each and
-  its facts in a few words (`Checked.tags`: readers write it in, a word players don't say,
-  the line gives little of it, one of a wide kind) — and orders them, best day first,
-  leaving out what would make no day; a line with no kind goes first only when, read aloud,
-  it beats the built ones. The first is built (`curate.build_day`: its words checked once
-  more on their line maps, page, puzzle, start words); when it cannot be, the next; then the
-  next lines. Every line prepared goes to the index as tried.
+  (below; a line the read sets aside goes no further), the words its read says need the work
+  leave (`curate.needs_work`), then its words are chosen THE MAIN WORD FIRST (below,
+  `curate.choose_trio`); every line that survived then gets its START WORDS on its line maps
+  and its DIFFICULTY FORECAST, as the bank's lines do (`curate.start_lines`, below).
+  `llm.choose_among` then COMPARES the lines, each as the player will get it — the line with
+  its words in brackets, its kind, its main word and the two chosen against it, what leads
+  to each, its facts in a few words (`Checked.tags`: readers write it in, a word players
+  don't say, one of a wide kind) and its forecast — and orders them, best day first, leaving
+  out what would make no day; a line with no kind goes first only when, read aloud, it beats
+  the built ones, and the line whose forecast is nearest THE AIM goes first unless one far
+  from it is clearly the better day, said in the answer (user-decided 2026-10-22). The first
+  is built with its starts (`curate.build_day`: its words checked once more on their line
+  maps, page, puzzle, the starts' checks on the written map); when it cannot be, the next;
+  then the next lines. Every line prepared goes to the index as tried.
 - **The words are chosen the way the user chooses them by hand (user-decided 2026-10-20:
   "once I find a good line, there's always a word I'm sure I want to pick, then I chose 2
   other words that works well with my first pick"): the MAIN word first, then two AGAINST
   it, and nothing is ever swapped.** The main word is the read's (below), named once. It is
   measured ALONE — only its own occurrences hidden — then its OTHER SENSE is asked (below),
   and it is refused by any fact against it on its line map (`curate.anchor_gate`,
-  `rules.trio_faults`: buried, unmapped, its neighbours writing it in, most readers writing
+  `rules.trio_faults`: unmapped, its neighbours writing it in, most readers writing
   it in, the reader's word at or under `HANDED_RANK` on its map, no start in its band): the
   line is then set aside, since the main word is never swapped; one players don't say
   passes — the trio's one such word belongs there. Then `llm.choose_companions` chooses TWO
@@ -266,18 +279,18 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   (`rules.trio_faults`, by role). The
   main word passed alone: all that can now hold against it is its neighbours, cut by a word
   hidden among them, writing it in — that word is refused, never the main word nor the line.
-  A fact against one of the two others — buried, unmapped, its neighbours writing it in (a
+  A fact against one of the two others — unmapped, its neighbours writing it in (a
   VETO on every hole, never the day's one handed word: user-decided 2026-10-13 and
   2026-10-20), a mirror, a lottery (a wide word whose ladder misses a step, on every hole:
   user-decided 2026-10-20), no start in its band, right beside the main word with nothing
   between (`rules.adjacent`: « [folk] [dancing] »; « [éleveur] de [pigeons] » passes) —
   refuses it: it leaves the words to choose from and the next ask is told why
-  (`curate.refuse`); what holds against the three together — two or more words players
-  don't say, two or more the line hands over (readers, or the map), a word every word of
+  (`curate.refuse`); what holds against the three together — two or more the line hands
+  over (readers, or the map), a word every word of
   whose path is hidden (a locked pair, or the main word's path hidden by a word chosen
   against it), two others side by side — is told back, refusing none.
-  `COMPANION_ASKS` (3) asks per line in all, format answers and the bank's start step
-  included; spent, the line is set aside. There is no review of a finished trio: asked of
+  `COMPANION_ASKS` (3) asks per line in all, format answers, the start step and the
+  forecast's wall note included; spent, the line is set aside. There is no review of a finished trio: asked of
   every trio, the model swapped on 77% of played days, loved ones included, and picked the
   hard word no better than chance — the trio is built up front, main word first, and code
   tells back what fails. NOTHING IS SWAPPED (user-decided 2026-10-20): a fact found on the
@@ -316,7 +329,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   (`curate.refuse`) — and so is a word whose answer is still unusable once asked again:
   never hidden unchecked. Every map the curator checks
   or picks starts on is the line map — the facts, the bands, `check_words`, the start
-  step's draft (`static_draft`). The crowd and a word's own keys stay on the plain map. Why:
+  step's draft (`static_draft`). A word's own keys stay on the plain map. Why:
   the plain order is right within one meaning (« poison »: poisonous 1st, toxic 5th, toxin
   6th); on 158 played holes the model named other-sense neighbours on 92 and touched no
   one-meaning word.
@@ -351,34 +364,17 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   rest intact, no start word; the words that could stand there and the one most readers
   would write) — whether most readers would write the secret itself (`rules.reader_writes`,
   twins folded — `is_twin`, `TWIN_RANK` 3 — a rare word past `PLAIN_WORD_RANK` never said to
-  be expected), a fact and a plain note (`rules.reading`); the judge's giveaway score
-  (`curate.giveaway_scores`, judged once the line is read, BEFORE the choice, for every word
-  that can be hidden but those the read says need the work — the floor, below — with its
-  real-play meaning: at `GIVEAWAY_MAX` 0.45 and above, a third of the players typed the
-  hole within three guesses; under `GIVEAWAY_HARD` 0.20 the hole plays hard, noted as one
-  the line gives little of — the start step's note, never a nearer band, below; scores in
-  the notes are cut to two places, never rounded (`rules.two_places`): a score under a bar
-  never prints at it); the WOULD-SAY test (user-decided 2026-10-06, on « faux-monnayeur »),
+  be expected), a fact and a plain note (`rules.reading`); the WOULD-SAY test (user-decided 2026-10-06, on « faux-monnayeur »),
   one call per word (`llm.would_say`: the line with that word blanked AND the word named —
   would a player who has roughly the meaning ever say it, or keep to commoner words
   meaning nearly the same?) as a note (`rules.said`) — in English the question adds that
   the players come from every English-speaking country, so a word or a sense only a small
   part of English speakers use counts as unsaid (`llm.AUDIENCE`, user-decided 2026-10-14,
   after « knickers »; the French question stays worded as calibrated): under
-  `WOULD_SAY_HARD` 0.4 it is a word players don't say; ONE makes a hard day a loved day may
-  hold (« moucheron », « mammifères »), TWO or more made the worst days (finished by a
-  median 40 % of the players, against 57 % with one and 71 % with none), so a trio holding
-  two is told back (`rules.trio_faults`) and never kept; the CROWD (`rules.crowd_share`,
-  free: the word's own PLAIN static map, `gen_phrase.walk_secret`, built in
-  `load_similarity`): the share of its `CROWD_N` (30) nearest groups more common in the
-  corpus than it, as a note — and the BURIED rule (user-decided 2026-10-08, after
-  « charnier »): a word players only half-say (would-say ≤ `BURIED_WOULD_SAY` 0.50, asked
-  TWICE and averaged when the crowd is over its bar) among commoner near-words (crowd ≥
-  `BURIED_CROWD` 0.70) is refused on every hole. Players
-  reach the idea, circle the commoner neighbours and stall: on 126 played French holes such
-  words stalled players about twice as often, rarity aside. A rare NAME passes
-  (« saint-bernard », said at 0.58), a rare stand-in does not (« faux-monnayeur »,
-  « charnier »); English uses the French bars, unchecked on play — the NEIGHBOURS rule
+  `WOULD_SAY_HARD` 0.4 it is a word players don't say, a note and a tag — how many a day
+  may hold is the taste's, and how hard the day plays is the forecast's (below); scores in
+  the notes are cut to two places, never rounded (`rules.two_places`): a score under a bar
+  never prints at it — the NEIGHBOURS rule
   (user-decided 2026-10-13: "droit de ___ is no fun when it's vote", « cinq semaines de ___
   payés »): the words right around the hole — up to `NEIGHBOURS` (3) each side, never
   across punctuation nor another hole (`rules.neighbourhood`; the other hidden words cut the
@@ -406,18 +402,52 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   over (readers, or the map) are
   told back (user-decided 2026-10-12, after a Desproges day solved in ten seconds); ONE easy
   word is the start step's to tune, never a duller word. And, once the map is built, where
-  the reader's nearest word lands in the hole's own map (`rules.map_nearest_filler`) — past
-  `READER_FAR_RANK` (500), or past the map, the note adds that the line gives little of the
-  word (`rules.far_note`, `curate._notes`; user-decided 2026-10-14, after « tutoyer » at 759
-  and « cercueil » at 1010: nothing a player types first tells them they are getting
-  closer); a fact for the start step, never which start to take (the taste's call), never
-  when the readers write the word itself, and never a veto (the user kept « cercueil »). A
+  the reader's nearest word lands in the hole's own map (`rules.map_nearest_filler`,
+  `curate._notes`), a fact for the start step, never which start to take (the taste's
+  call). A
   word players would say instead that IS this word in another form (« sauver » for
   « sauva »: its spelling, its lemma, or a key of its own group on its plain map — what
   typing it finds, `rules.same_word`, `curate.load_similarity`'s `own`; « table » is not
   « tablée »; the coarse spelling test `is_variant` only for a word with no map — never a
   near neighbour like « faussaire », which is another word in its own group) finds the
   hole, so that word counts as said; the NEIGHBOURS rule reads the same test.
+- **THE DIFFICULTY FORECAST: one per-word read, calibrated on real play, shown and never
+  a veto (user-decided 2026-10-22: "a decent and predictable and stable level of difficulty
+  between days")** (`difficulty.py`). Each hidden word is READ once its start is known
+  (`llm.difficulty_prompt`: the line with its hidden words in braces and this one marked,
+  the line as players first see it, the word, its start and the start's rank, the 15
+  nearest words of its map — told the word, read once, never played guess by guess) and
+  answers its typical tries; `SAMPLES` (2) answers averaged in log tries (one repeats at
+  about 0.8). Every answer is kept in `reads.jsonl` by the question's sha256, never asked
+  twice; the question is worded EXACTLY as calibrated (its answers on 240 played holes
+  seeded the calibration), so an edit is a new question: `--calibrate` reads every played
+  day again, and a bank line read under another stamp (`difficulty.stamp`) shows no
+  forecast until it is taken again. Code turns the reads into real-play numbers with a
+  FIT on the days played (`difficulty.calibration`: the PLAY RECORD, root AGENTS.md, and
+  the reads of its days; weighted least squares, each day weighing half as much every
+  `HALF_LIFE_DAYS` (30) before the latest, at least `MIN_DAYS` (10) French days): a word's
+  log tries and its share found within 30 tries on its read; a day's log tries to finish and
+  its share finished on its HARDEST and SECOND-HARDEST reads (a day is as hard as its hardest
+  word: R² 0.92 on 56 played French days). Left out one day at a time over those 56 days,
+  the day forecast tracks real play at 0.77 (about ±5 tries around 16 on 80% of days; the
+  share finished within about 15 points). ENGLISH is forecast from the French fit plus the
+  measured English offset (+0.23 log tries) and said to be uncalibrated on English players:
+  2 to 10 a day, 95% of English rounds played by French regulars. The forecast is SHOWN —
+  code refuses nothing on it: on the bank page, to the run's comparison (`llm.choose_among`,
+  THE AIM, below), as a note to the words chosen against the main word (a companion whose
+  chance to be a WALL — fewer than half find it within 30 tries — passes `WALL_NOTE` 0.5 is
+  told back ONCE, `curate.bank_line`; the model keeps it as the punch or chooses again, and
+  the words stay when no asks or no other two words are left: a note never sets a line
+  aside; main words and companions were walls equally often, only a companion can be chosen
+  again), and in the log of every written puzzle before it is published (`final_forecast`;
+  a blind run names the words by their place). THE AIM: `TARGET_FINISHED` 0.70, the taste's
+  own "at least 70% of the players finish" — a day's hardest word found by a typical player
+  in about 10 tries; a day under half finished is a frustrating one (user-decided
+  2026-10-22; 80% would need every hardest word around 7 tries, and loved days with a hard
+  punch word finished under 70%). It replaced the giveaway floor and its notes, the BURIED rule and its crowd,
+  the far-reader note and the two-unsaid-words trio fault. Rejected: a block on the forecast
+  (a coded threshold on a model's judgement); one read of the whole day (weaker than per
+  word); a longer stretch of the map, or real played words as anchors (neither helped).
 - **Which words can be hidden (facts, `rules.initial_candidates`):** NOUN/VERB/ADJ/ADV and
   PROPN (the parser tags a lowercase brand or rare noun as a proper noun — « rolex »,
   « zigzag », secrets of a favourite day; a name nobody can reason toward is taste's
@@ -429,14 +459,11 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   exclusion: « post-it » was a secret of a favourite day) and only WHOLE — `parse` merges
   the pieces spaCy splits (« ice-cold », « répondit-il »), since gen_phrase can hole a
   word-core, never a piece of one — not a secret still in its `SECRET_COOLDOWN_DAYS` (90, `shelf.py`, judged on the
-  ledger's game day), no same-lemma twin under another slug in the line (a same-slug
-  repeat is one hole per occurrence), and **the line gives a path to it** (user-decided
-  2026-10-02): the judge's giveaway score at or above `GIVEAWAY_MIN` (0.10,
-  `jev.py`). Why: under it players never reason their way to the word — English
-  « bloated » and « rapacity » beat a native speaker — and no loved day's hole sits under
-  it. The words under it are logged and never shown to the model. A line with fewer than
-  `TRIO` such words is set aside, and so is one whose MAIN word (the read's, below) sits
-  under it: no clue (`curate.floor`).
+  ledger's game day), and no same-lemma twin under another slug in the line (a same-slug
+  repeat is one hole per occurrence). A line with fewer than `TRIO` such words is set
+  aside. Whether the line gives a PATH to a word is the model's verdict, never a score: the
+  read names the main word with the words its path runs through, and each word chosen
+  against it must name its own (`curate.path_off`).
 - **Every shortlisted line is READ before anything is paid for (user-decided 2026-10-20:
   the seven kinds of line, the main word first).** One call per line (`llm.read_line`, the
   taste and the find-sentences skill's `## Stands alone` read whole, the words code allows
@@ -457,8 +484,9 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   main word; its stop words passed over and left out of the path, `curate.content_path`:
   the parser's list, which the model cannot know, and a word always in sight never locks a
   pair), `READ_ROUNDS` (3) asks in all; a malformed answer raises. A
-  line with NO KIND is kept. The sibling is a warning only. Only then is the giveaway paid
-  (the floor, below); then its words are chosen, its main word first (above).
+  line with NO KIND is kept. The sibling is a warning only. The words it says need the work
+  then leave the words the line can hide (`curate.needs_work`; under TRIO left, the line is
+  set aside), and its words are chosen, its main word first (above).
 - **The FAMOUS LINE is a QUOTATION test, never a memory test (user-decided 2026-09-08,
   replacing the two-probe MEMORIZATION test — author + completion from the first half).**
   The model has memorised every line of a canonical book, so what it remembers says
@@ -502,9 +530,8 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   (`llm.pick_starts`: each hole with its role, its path, its ladder when it is one of a wide
   kind — a start whose FIRST idea names the ladder's smaller family, never the whole kind —
   user-decided 2026-10-20), by the taste with code's notes (above), from the band 100–200
-  of every map, for EVERY hole (user-decided 2026-10-08: a hole under `GIVEAWAY_HARD` 0.20
-  is noted as one the line gives little of, a fact, never a nearer band; which start each
-  hole takes is the taste's `## The start words`); the WHOLE band is shown, no cap
+  of every map, for EVERY hole (user-decided 2026-10-08: never a nearer band; which start
+  each hole takes is the taste's `## The start words`); the WHOLE band is shown, no cap
   (`starts.start_candidates`: shipped rank within the
   band, no variant, letter-rule-clean, its WORD not
   past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère » is out; the word
@@ -512,18 +539,18 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   shown inflected — « observaient » — stays; and each key reads reduce's COMMONNESS table
   (`*_reduced_commonness.json`, missing = the run dies), which counts a word's
   CAPITALISED spellings, so a name — « shiva », « zeus » for « Dieu » — is not ranked
-  rare; the table only ever moves a word up. The crowd keeps the lowercase reduced order
-  the buried rule was measured on). In a run, the first successful gen_phrase run only
-  supplies the maps; gen_phrase then reruns with `--start MOT=DEPART` per hole (#260); a
-  banked line's starts, chosen on the line maps, go on the first run and are read again on
-  the written map in code (`--finish`, above).
-  Before any question, the trio's facts are read on the map at hand (`rules.trio_faults`:
-  the line maps in the bank's in-memory draft, the written map in a run — one map — a word
-  handed there, a word with NO candidate in its band); any makes the line UNBUILDABLE, and
-  so does a hidden word the model finds no start gives a path to (`unsaveable`: none of its
-  candidates links to it in its everyday sense, or it is dead or out of reach whatever its
-  start, user-decided 2026-10-08) — the bank's start step chooses again in place of one of
-  the two others; in a run the line is not built. A hole the answer leaves without a valid start is asked again, alone, once
+  rare; the table only ever moves a word up). Every finished line's starts — a run's
+  candidates' and the bank's alike — are chosen on its LINE maps before the lines are
+  compared (`curate.bank_line` on an in-memory draft, `static_draft`), so the comparison
+  reads each line with its starts and its forecast; they go on gen_phrase's first run
+  (`--start MOT=DEPART` per hole, #260) and are read again on the written map in code
+  (`banked_fault`) and by `check_starts`, never chosen again unless the written map moved one.
+  Before any question, the trio's facts are read on the line maps of the draft
+  (`rules.trio_faults`: a word handed there, a word with NO candidate in its band); any makes
+  the line UNBUILDABLE, and so does a hidden word the model finds no start gives a path to
+  (`unsaveable`: none of its candidates links to it in its everyday sense, or it is dead or
+  out of reach whatever its start, user-decided 2026-10-08) — the start step chooses again in
+  place of one of the two others; a fact against the main word sets the line aside. A hole the answer leaves without a valid start is asked again, alone, once
   (`llm.pick_start`, its role and the line's kind, with every other hole's notes and start);
   still incomplete, the draft is refused and erased — never a random generator pick. **A
   secret/start PAIR is blacklisted for
@@ -550,14 +577,17 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   meaningless one is refused. Once the sentence reads right, `llm.start_ideas` asks, for
   the main word's start and the start of each word of a wide kind (user-decided
   2026-10-20: the main word's path is the day's, and a wide word's start must name a
-  smaller family), the FIRST idea it brings where it stands and whether its hidden word
-  shares it — the taste's
+  smaller family), and for every start RE-PICKED by the start step (user-decided
+  2026-10-23: « panel », re-picked for « pourcentage » once the sorted map moved its
+  banked start, sent the user's round around the poll's sample and never to a share), the
+  FIRST idea it brings where it stands and whether its hidden word shares it — the taste's
   `### One idea, the start's first one`, quoted (user-decided 2026-10-14, the user's own
   reading: « fracas » carries noise like « rugissements »; « berceau » for « cercueil »
   shared only a vague side meaning, its stronger ideas led away, and the user's round
   made no progress at all); a RIDDLE start is re-picked, never sets a line aside. Not of
   every hole: asked of every hole of the user's loved days, the check called 17 of their 57
-  starts riddles, and the picks still read the rule in the taste. A start the check passed
+  starts riddles, and the day's own picks still read the rule in the taste; a start chosen
+  again alone, late, is one the day's choice never weighed. A start the check passed
   is never asked again (`cleared`, kept across rounds); a
   start the answer gives no verdict for refuses nothing and is logged as left to the
   reviewer, never as a pass; and on the last round (`START_ROUNDS`) a riddle is logged for
@@ -644,9 +674,10 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   it; root `AGENTS.md`; user-decided 2026-09-08, superseding the generation output of
   2026-09-07):
   works, secrets in their cooldown (judged on the game DAY the line names), the permanent
-  secret/start pairs, sentences, the artist cooldown's dates. A day published twice keeps
-  its last line for secrets, sentence and work — but its PAIRS come off every line, the
-  corrected day's earlier start included (it was played until the correction). Neither the generation output (what `forget` erases: attempts) nor the
+  secret/start pairs, sentences, the artist cooldown's dates — off EVERY line, a corrected
+  day's earlier version included (user-decided 2026-10-23: it was played until the
+  correction — 2026-10-22 en stood eleven hours, and its book came back as a candidate the
+  next day once only the last line counted). Neither the generation output (what `forget` erases: attempts) nor the
   backend's local store (a test bed) is ever read for the archive.
 - **Never the same BOOK twice** (`shelf.in_archive`, a shelf work against the archive's
   works): titles compare by `shelf.title_key` (each word folded by `slug` without its
@@ -666,9 +697,9 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 
 - Don't publish, and don't write a puzzle by any path but `gen_phrase`.
 - Don't turn a measurement into a veto: code states facts, taste chooses. A new signal
-  goes to the model as a note, with its real-play meaning. The vetoes are the giveaway
-  floor (`GIVEAWAY_MIN`, user-decided 2026-10-02) and the facts `rules.trio_faults` names:
-  on every hole the BURIED rule (`rules.buried`, user-decided 2026-10-08), the UNMAPPED
+  goes to the model as a note, with its real-play meaning; the difficulty forecast is one,
+  never a gate. The vetoes are the facts `rules.trio_faults` names:
+  on every hole the UNMAPPED
   rule (`rules.unmapped`, user-decided 2026-10-12), the NEIGHBOURS rule
   (`rules.neighbourhood` + `llm.neighbours_complete`, user-decided 2026-10-13) and an empty
   start band; the main word handed (readers, or its map); a word right beside the main
@@ -676,24 +707,29 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   lottery: user-decided 2026-10-20); and its other-sense verdict on a hidden word (a map
   that barely carries the line's sense, or no verdict: `curate.sense`, user-decided
   2026-10-21). What holds against the three together is told back,
-  never a veto. Don't keep a hand list of refused words: the buried rule measures any word
-  (the user: "the curator will be good in 30 years with this solution").
+  never a veto. Don't keep a hand list of refused words.
+- Don't add a coded check for a question of meaning, path or difficulty (user-decided
+  2026-10-22: "language is too complex to be understood with code, that's why we have
+  LLM"): ask the model a better question, with the material it needs shown.
 - Don't swap a word (user-decided 2026-10-20): the main word is never swapped (a fact
-  against it sets the line aside), one of the two others is chosen again only by the bank's
-  start step, and a line found unbuildable on its written map is not built
+  against it sets the line aside), one of the two others is chosen again only by the start
+  step on the line maps (and after the forecast's wall note), and a line found unbuildable
+  on its written map is not built
   (`curate.Unbuildable`).
 - Don't write taste into code or a prompt copy; it lives in the `taste` skill.
-- Don't ask a model to PLAY the puzzle — to guess its way to a secret, count the tries or
+- Don't ask a model to PLAY the puzzle — to guess its way to a secret, guess by guess, or
   simulate a player (user-decided 2026-09-25): LLMs don't play like people (on real
   puzzles they beat them most days and miss what people find easily, and the result moves
   with the model, the run and the prompt). Difficulty is read off real play: the taste
-  skill's examples and code's calibrated notes. The reader, filling a blank the way the
-  user reads, is not play; nor is the would-say test, which is told the word.
+  skill's examples and the calibrated forecast. The reader, filling a blank the way the
+  user reads, is not play; nor is the would-say test, which is told the word; nor is the
+  difficulty read (user-decided 2026-10-22), told the word and read once, whose number is
+  never used raw — only through its fit on real play.
 - Don't commit the shelf (copyrighted files, the artist list) or the runs.
 - Don't put a Genius token anywhere but the environment.
 
 ## Not in V1 (deliberately)
 
-Publishing; the benchmark as a difficulty gate; difficulty prediction from player logs;
+Publishing; the benchmark as a difficulty gate;
 music in English (out of #317's scope; the code paths are generic);
 movies/subtitles (explicitly out, #262); per-token guess counting.

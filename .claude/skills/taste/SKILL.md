@@ -838,7 +838,10 @@ Fun dies at both ends, and real rounds show it:
 The aim: never frustrating for the slow players, never handed to the fast ones. At least
 70% of the players finish the day — below that, too many stop playing the game — and the
 fast ones still search: 09-21, finished by 69% with a median of 5 tries, was dead. A day
-is as hard as its hardest hole. Tune difficulty with the start word, for a word that has a
+is as hard as its hardest hole: for 70% to finish, a typical player finds the hardest word
+in about 10 tries; at about 20, half the players never finish. The FORECAST beside a
+finished line says how it will play, read off real play: choose the line nearest the aim,
+and one far from it only for a reason worth the players' time. Tune difficulty with the start word, for a word that has a
 path: a start tunes how far the search runs, and never gives a path to a word the line
 leaves without one (a lottery, no clue). Never trade a living word for a dead one: a great
 word that plays too hard needs a better start, not a duller word.
@@ -858,9 +861,9 @@ fun to find stays: « clodos » over « stagnation » — the register a notch o
 grin, the abstract noun only completes the thought.
 
 A rare NAME of the thing passes (« saint-bernard », « post-it »: there is no other word for
-it); a rare stand-in among commoner words meaning the same is BURIED, and code refuses it
-(« faux-monnayeur » beside « faussaire », « charnier » among « cimetière », « ossuaire »,
-« fosse »): players reach the idea, circle the commoner neighbours and stall.
+it); a rare stand-in among commoner words meaning the same is BURIED (« faux-monnayeur »
+beside « faussaire », « charnier » among « cimetière », « ossuaire », « fosse »): players
+reach the idea, circle the commoner neighbours and stall.
 
 In English, the players come from every English-speaking country: a word, or a sense of a
 word, that only a small part of English speakers use is a word most of them don't say,

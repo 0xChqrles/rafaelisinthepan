@@ -7,7 +7,7 @@ in its cooldown), turns what it measures into plain notes the model reads — wh
 reader would put in a blank (`reading`), whether a player who has the meaning would say
 the word (`said`), where the reader's words land in the hole's own map
 (`map_nearest_filler`) — and names the facts that hold against a trio, its main word
-first (`trio_faults`). The judgements are injected as callables, so everything is
+first (`trio_faults`). How hard a day plays is the difficulty forecast's (`difficulty.py`). The judgements are injected as callables, so everything is
 testable without a parser, a model or a vector file.
 """
 
@@ -61,11 +61,9 @@ PLAIN_WORD_RANK = 40000
 # 2026-08-26 → 10-05, it told the holes fewer than half the players found within 30 tries
 # from the rest at AUC 0.84 (two runs, 0.81 and 0.86, agreeing at 0.93; the giveaway
 # score: 0.70). Under WOULD_SAY_HARD sat 25 holes, found within 30 tries by a median 41 %
-# of the players against 76 % above. ONE such word is a hard day the user may love
-# (« moucheron », « mammifères », « stagnation », « cafard » sit under it); TWO or more
-# made the worst days: finished by a median 40 % of the players (6 days, none reaching
-# the taste's 70 %), against 57 % with one (12) and 71 % with none (23) —
-# « faux-monnayeur » (0.30) shared 2026-10-05 with a second one, and 30 % finished it.
+# of the players against 76 % above. A NOTE for the model (`said`): how many such words a
+# day may hold is the taste's (« moucheron », « mammifères », « stagnation », « cafard » sit
+# under it), and how hard the day plays is the difficulty forecast's (`difficulty.py`).
 WOULD_SAY_HARD = 0.4
 # Secrets per puzzle (the sentence schema: exactly three distinct slugs).
 TRIO = 3
@@ -208,19 +206,6 @@ def said(chance: float | None, instead: str | None, same: bool = False) -> str:
     return note
 
 
-# A BURIED word (user-decided 2026-10-08, after « charnier »): players only half-say it
-# (would-say at most BURIED_WOULD_SAY) and it sits among commoner near-words (at least
-# BURIED_CROWD of its CROWD_N nearest groups on the plain, embedding-only map are more
-# common in the corpus). Players reach the idea, then circle the commoner neighbours and
-# stall: on 126 played French holes, half-said words in such a crowd stalled players about
-# twice as often (a run of 10 guesses with no new best: 33% against 18%), rarity aside.
-# A rare NAME passes (« saint-bernard », said at 0.58); a rare stand-in does not
-# (« faux-monnayeur », « charnier »). Code refuses it — the second veto after the giveaway floor.
-BURIED_WOULD_SAY = 0.50
-BURIED_CROWD = 0.70
-CROWD_N = 30
-
-
 def group_commonness(rank_map: dict, index_of: Callable[[str], int | None]) -> dict[int, int | None]:
     """Each group of `rank_map` (a map's shape: key -> {rank, ...}; a group is its rank,
     every key one of its forms) by its commonness: the corpus position of its commonest
@@ -232,31 +217,6 @@ def group_commonness(rank_map: dict, index_of: Callable[[str], int | None]) -> d
         known = [x for x in (out.get(entry["rank"]), i) if x is not None]
         out[entry["rank"]] = min(known) if known else None
     return out
-
-
-def crowd_share(rank_map: dict, index_of: Callable[[str], int | None]) -> float | None:
-    """The share of the secret's CROWD_N nearest groups in `rank_map` (rank 0 the secret)
-    that are more common than the secret's own group (`group_commonness`). A group with
-    no known key is left out of the share. None when the secret's group or every
-    neighbour is unknown."""
-    groups = group_commonness(rank_map, index_of)
-    secret = groups.get(0)
-    if secret is None:
-        return None
-    near = [groups[r] for r in sorted(r for r in groups if r >= 1)[:CROWD_N] if groups[r] is not None]
-    return round(sum(i < secret for i in near) / len(near), 3) if near else None
-
-
-def buried(chance: float | None, crowd: float | None) -> bool:
-    """Whether a hidden word is BURIED: half-said and among commoner near-words."""
-    return chance is not None and crowd is not None and chance <= BURIED_WOULD_SAY and crowd >= BURIED_CROWD
-
-
-def crowd_note(crowd: float | None) -> str:
-    if crowd is None:
-        return "its crowd of commoner near-words: not measured"
-    n = round(crowd * CROWD_N)
-    return f"{n} of its {CROWD_N} nearest words on the plain map are more common than it"
 
 
 # The words a player reads at a glance around a hole: up to NEIGHBOURS each side, never
@@ -338,27 +298,6 @@ def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> 
     return best
 
 
-# Past this rank in the hole's own map, the words a reader puts in the blank tell the player
-# nothing (user-decided 2026-10-14): on « tutoyer » (« commander » at 759) and « cercueil »
-# (« parquet » at 1010, played from « berceau ») the user's own rounds made no progress at
-# all. The line then gives little of the word whatever its giveaway score: a note for the
-# start step, never a veto (the user kept « cercueil », with « cadavre » for its start).
-READER_FAR_RANK = 500
-# What a hole's notes say when the line gives little of its word — a giveaway under
-# GIVEAWAY_HARD, or the reader's words landing far (`far_note`): one spelling for both notes.
-GIVES_LITTLE = "the line gives little of this word"
-
-
-def far_note(nearest: tuple[str, int | None] | None) -> str | None:
-    """The start step's note when the reader's nearest word (`map_nearest_filler`) lands
-    past READER_FAR_RANK in the hole's own map, or past the map; None when it is nearer or
-    the reader named no word to type."""
-    if nearest is None or (nearest[1] is not None and nearest[1] <= READER_FAR_RANK):
-        return None
-    return (f"every word a reader puts in this blank lands past rank {READER_FAR_RANK} in this hole's map, so "
-            f"nothing a player types first tells them they are getting closer: {GIVES_LITTLE}")
-
-
 def adjacent(tokens: list[Token], hidden: set[int]) -> set[frozenset[str]]:
     """The pairs of hidden words side by side, nothing between them (« [folk] [dancing] »:
     one idea split over two holes), by slug. A word, a sign or a stop word between two holes
@@ -375,7 +314,7 @@ class HoleFacts:
     map at hand: whether most readers write it in (`reader_writes`); the fragment around one
     of its holes whose words write it in, when one does (`neighbours`); the rank of the
     reader's word on its map when at or under HANDED_RANK (`map_handed`); whether players
-    don't say it (`unsaid`) or it is BURIED; the reader's words when none is on its map
+    don't say it (`unsaid`); the reader's words when none is on its map
     (`unmapped`); whether its band holds no start (`band_empty`); the slugs of the words its
     path runs through (`path_words`); and the model's verdicts on a word chosen against the
     main word — the partner of a visible word (`mirror`), the step its ladder misses
@@ -387,7 +326,6 @@ class HoleFacts:
     neighbours: str | None = None
     map_handed: int | None = None
     unsaid: bool = False
-    buried: bool = False
     unmapped: tuple[str, ...] | None = None
     band_empty: bool = False
     mirror: bool = False
@@ -396,9 +334,6 @@ class HoleFacts:
 
 def _refused(h: HoleFacts) -> str | None:
     """What refuses a hidden word wherever it stands, in the player's terms; None when nothing does."""
-    if h.buried:
-        return ("buried: players only half-say it, among commoner words meaning nearly the same — they reach "
-                "the idea, circle the commoner neighbours and stall")
     if h.unmapped:
         return (f"none of the words readers put in its blank ({', '.join(f'« {w} »' for w in h.unmapped)}) is "
                 "on its map: every first guess lands past it")
@@ -419,9 +354,10 @@ def trio_faults(holes: list[HoleFacts], adjacent: set[frozenset[str]] = frozense
     write it in, or the reader's word sits at or under HANDED_RANK on its map — never by
     being one players don't say. Each of the two others is refused by any fact that refuses
     a word, or by sitting right beside the main word (`adjacent`, pairs of slugs side by
-    side). What holds against the three together refuses none of them: two or more words
-    players don't say, two or more the line hands over (readers, or the map), a word every
-    word of whose path is hidden (a locked pair, or a hidden path), two others side by side.
+    side). What holds against the three together refuses none of them: two or more the line
+    hands over (readers, or the map), a word every word of whose path is hidden (a locked
+    pair, or a hidden path), two others side by side. How many words players don't say a day
+    may hold is the taste's: each such word is a note (`said`), never a fact against the trio.
     Returns {"main": why | None, "others": {slug: why}, "trio": [why, ...]}."""
     main, others = holes[0], holes[1:]
     why = _refused(main)
@@ -436,10 +372,6 @@ def trio_faults(holes: list[HoleFacts], adjacent: set[frozenset[str]] = frozense
             why = f"it sits right beside the main word « {main.word} »: one idea per hole"
         if why:
             faults["others"][h.slug] = why
-    unsaid = [h.word for h in holes if h.unsaid]
-    if len(unsaid) >= 2:
-        faults["trio"].append(f"it hides {len(unsaid)} words players don't say ({', '.join(unsaid)}): at most one — "
-                              "days with two were finished by a median 40% of the players")
     handed = [h.word for h in holes if h.reader_writes or h.map_handed is not None]
     if len(handed) >= 2:
         faults["trio"].append(f"the line hands over {len(handed)} of its words ({', '.join(handed)}): at most one")

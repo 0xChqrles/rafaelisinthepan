@@ -394,8 +394,8 @@ def choose_companions(claude: Claude, marked_line: str, read: dict, notes: str, 
     Returns {"words": [{word, path, path_words, mirror, wide, ladder, lands}, two], "why"}
     (a ladder only for a word of a wide kind), or {"words": None, "why"} when the model
     declines; None when the answer is unusable."""
-    again = ("\nRefused so far — never choose a refused word again, and mind what held against the three:\n"
-             + "\n".join(f"- {r}" for r in refused) + "\n") if refused else ""
+    again = ("\nTold back so far — never choose a refused word again; mind what held against the three, and the "
+             "notes:\n" + "\n".join(f"- {r}" for r in refused) + "\n") if refused else ""
     kind = read["kind"]
     built = f"Its kind: {kind}. {KINDS[kind]}." if kind else "Its kind: none of the seven."
     main = f"Its MAIN word « {read['anchor']} »: {read['path']} (through {_through(read['path_words'])})"
@@ -464,21 +464,31 @@ or {{"words": null, "why": "<one line>"}} to decline.""")
     return {"words": out, "why": str(answer.get("why") or "")}
 
 
-def choose_among(claude: Claude, days: list[dict], *, lang: str) -> dict | None:
+def choose_among(claude: Claude, days: list[dict], *, lang: str, aim: str | None = None) -> dict | None:
     """The day, chosen by COMPARISON among FINISHED candidates (user-decided 2026-10-13):
-    each `days` entry is a line whose three words were chosen and checked — {"marked": the
-    line with its hidden words in brackets, "kind": its kind (`KINDS`) or None, "words":
-    [{"word", "path", "path_words", "tags"}], the main word first, then the two chosen
-    against it, each with what leads to it and code's facts about it}. The model orders
-    them, best day first, leaving out any that would not make a day worth playing. Returns
-    {"order": [indices], "why": str} (an empty order declines them all), or None when the
-    answer is unusable."""
+    each `days` entry is a line whose three words and start words were chosen and checked —
+    {"marked": the line with its hidden words in brackets, "kind": its kind (`KINDS`) or None,
+    "words": [{"word", "path", "path_words", "tags"}], the main word first, then the two chosen
+    against it, each with what leads to it and code's facts about it, "forecast": its
+    difficulty forecast in one line (`difficulty.describe`) or None}. With an `aim`
+    (`difficulty.aim`, user-decided 2026-10-22) the line nearest it goes first unless one far
+    from it is clearly the better day, and the answer says why. The model orders them, best day
+    first, leaving out any that would not make a day worth playing. Returns {"order":
+    [indices], "why": str} (an empty order declines them all), or None when the answer is
+    unusable."""
     listing = "\n\n".join(
         f"{n}. « {d['marked']} »\n   {kind_text(d['kind'])}"
         + "".join(f"\n   - {'main word ' if i == 0 else ''}« {w['word']} »: {w['path']} (through "
                   f"{_through(w['path_words'])})" + (f"; {', '.join(w['tags'])}" if w["tags"] else "")
                   for i, w in enumerate(d["words"]))
+        + (f"\n   forecast: {d['forecast']}" if d.get("forecast") else "")
         for n, d in enumerate(days, 1))
+    level = (f"""
+Each line's FORECAST says how hard it will play: the typical tries to finish it and the share of
+the players who finish, with the range 80% of past days fell in, read off real play. The aim:
+{aim}. Put first the line whose forecast is nearest the aim; put a line far from the aim first
+only when it is clearly the better day, and say why in your answer.
+""" if aim else "")
     answer = claude.json(f"""You choose tomorrow's day for a daily {LANGUAGE[lang]} word game. One line, three words hidden;
 the player rebuilds each from how close every guess lands, starting from a START word
 chosen later. A word once found stays revealed and becomes context for the others.
@@ -492,7 +502,7 @@ words chosen against it, each with what leads to it, the words of the line its p
 through, and what code measured of it.
 
 {listing}
-
+{level}
 Compare them as the player will get them, and order them, best day first. A line with no kind
 goes first only when, read aloud, it beats the built ones. Leave out any that would not make a
 day worth playing.
@@ -589,6 +599,75 @@ the words around it call for?
 Return {{"word": "<one word>"}}""")
     word = answer.get("word") if isinstance(answer, dict) else None
     return word.strip() if isinstance(word, str) and word.strip() else None
+
+
+# The DIFFICULTY READ (user-decided 2026-10-22): how hard one hidden word will be, judged ONCE
+# from what players will see — the line, its start, the nearest words of its map — never played
+# guess by guess. Worded EXACTLY as it was calibrated on 240 played holes (its answers seed
+# `difficulty`'s calibration, keyed by the prompt's hash): an edit is a new question, and the
+# played days are read again (`curate --calibrate`).
+DIFFICULTY_GAME = """The game: a line from a book or a song with three words hidden. Each blank first shows a START
+word with its rank. The player types guesses; each guess shows its RANK in that hidden word's
+map: rank 1 is the closest word, the map holds the word's ~10,000 nearest words in a
+word-embedding space learned from web text (fastText), and a word not on the map is a miss.
+A word is found when the player types it (or a form of it). Players think by association: they
+read the line, get roughly what goes there, type words around that meaning, and the ranks tell
+them which way is warmer."""
+
+DIFFICULTY_GUIDE = """What made the difference in real play:
+- whether the visible line leads a reader to the meaning (a path), or leaves it open: one
+  member of a wide kind the line does not narrow, no clue at all, or a sense the reader cannot see;
+- once a player has the meaning, whether they would say THIS word, or keep saying a commoner
+  word for it;
+- whether the words a reader types for that meaning land near the word on ITS map (look at its
+  nearest words: the map may carry another sense of the word than the line's, or be made of
+  rare words);
+- how much the start word gives: the idea it brings where it stands, and how far it leaves the player."""
+
+DIFFICULTY_AUDIENCE = {"fr": "", "en": "\nThe word is from an English day; its players come from every English-speaking country.\n"}
+
+
+def difficulty_prompt(hole: dict, *, lang: str) -> str:
+    """The difficulty read's question for one hidden word (`difficulty.material`): the line with
+    the hidden words in braces and this one marked (`true`), the line as players first see it
+    (`seen`), the word, its start and the start's rank, and the 15 nearest words of its map
+    (`top`, [(rank, word)])."""
+    nearest = ", ".join(f"{r} {w}" for r, w in hole["top"])
+    block = "\n".join([f"  line: « {hole['true']} »",
+                       f"  players first saw: « {hole['seen']} »",
+                       f"  hidden word: « {hole['secret']} »; its start « {hole['start']} » at rank {hole['start_rank']}",
+                       f"  nearest on its map: {nearest}"])
+    return f"""You judge how hard one hidden word of a daily word game will be for its players.
+
+{DIFFICULTY_GAME}
+
+{DIFFICULTY_GUIDE}
+
+For scale, over 123 hidden words of past French days: the typical number of tries to find a word
+(geometric mean over players, a player who did not find it within 20 tries counted as 20) ran from
+about 2 to 20, median about 10; the easiest tenth took under 4 tries, the hardest tenth over 18
+(most players never found them within 20).
+
+THE HIDDEN WORD ({LANGUAGE[lang]})
+{block}
+{DIFFICULTY_AUDIENCE[lang]}
+Read it once and judge; do not play it guess by guess.
+
+Return {{"typical_tries": <your estimate of its typical tries, 1 to 20>, "found_within_30": <the share of players who find it within 30 tries, 0 to 1>, "why": "<one sentence>"}}"""
+
+
+def hole_difficulty(claude: Claude, prompt: str) -> dict | None:
+    """The difficulty read asked (`difficulty_prompt`): {"typical_tries" (1 to 20),
+    "found_within_30" (0 to 1), "why"}, or None when the answer is unusable."""
+    answer = claude.json(prompt)
+    if not isinstance(answer, dict):
+        return None
+    tries, found = answer.get("typical_tries"), answer.get("found_within_30")
+    if any(isinstance(x, bool) or not isinstance(x, (int, float)) for x in (tries, found)):
+        return None
+    if not 1 <= tries <= 20 or not 0 <= found <= 1:
+        return None
+    return {"typical_tries": float(tries), "found_within_30": float(found), "why": str(answer.get("why") or "")}
 
 
 def other_sense(claude: Claude, sentence: str, word: str, words: list[str], *, lang: str,

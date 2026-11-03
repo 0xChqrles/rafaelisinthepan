@@ -26,6 +26,13 @@ GENERATION_OUTPUT_DIR = GENERATION_DIR / "output" / "word"
 # to S3, appended by `pnpm puzzle:publish --s3` (backend/src/ledger.ts) — the ONE record of
 # what has been published, and the whole of the curator's archive.
 PUBLISHED_LEDGER = GENERATION_DIR / "published.jsonl"
+# The PLAY RECORD (user-decided 2026-10-22): one JSON line per closed day, how its players did
+# on the day (aggregates only), appended by `pnpm puzzle:played --s3` (backend/src/played.ts) —
+# what the difficulty forecast is calibrated on.
+PLAY_RECORD = GENERATION_DIR / "played.jsonl"
+# The difficulty reads (`difficulty.read`), every answer kept by its question's hash: a question
+# is never asked twice. Gitignored (the reads name the hidden words).
+READS_FILE = CURATION_DIR / "reads.jsonl"
 VOCAB_DIR = REPO_ROOT / "packages" / "web" / "public" / "vocab"
 
 

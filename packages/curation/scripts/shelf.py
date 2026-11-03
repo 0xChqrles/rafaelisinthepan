@@ -110,15 +110,6 @@ def ledger_lines(lang: str) -> list[dict]:
     return out
 
 
-def published(lang: str) -> list[dict]:
-    """The ledger's lines for a language, one per day: a day published twice (a
-    correction) keeps its LAST line only."""
-    by_day: dict[str, dict] = {}
-    for entry in ledger_lines(lang):
-        by_day[entry["day"]] = entry
-    return [by_day[day] for day in sorted(by_day)]
-
-
 def _holes(entry: dict):
     for hole in entry.get("holes") or ():
         if isinstance(hole, dict) and hole.get("secret"):
@@ -132,23 +123,22 @@ def archive(lang: str, today: date | None = None) -> dict:
     compares: two volumes are two works), secrets: {slug} (the ones still in their
     SECRET_COOLDOWN_DAYS, judged on the game DAY they were published for), pairs: {secret
     slug: {start word}} (every secret/start pair ever played — permanent), sentences:
-    {key}, last_used: {author slug: date}} (the artist cooldown's clock)."""
+    {key}, last_used: {author slug: date}} (the artist cooldown's clock). EVERY line counts,
+    a corrected day's earlier version included: it was played until it was replaced (2026-10-22
+    en stood eleven hours before its correction), so its work, sentence, secrets and pairs stay
+    used."""
     today = today or date.today()
     works, secrets, sentences = [], set(), set()
     pairs: dict[str, set[str]] = {}
     last_used: dict[str, date] = {}
     last_music: date | None = None  # the music stream's clock (one or two days a week)
     seen = set()
-    # The PAIRS come off EVERY line, a corrected day's earlier start included: it was
-    # played until the correction, and the blacklist is "ever played" (PR-274 review).
     for entry in ledger_lines(lang):
-        for hole in _holes(entry):
-            if hole.get("start"):
-                pairs.setdefault(hole["secret"], set()).add(hole["start"])
-    for entry in published(lang):
         day = date.fromisoformat(entry["day"])
         cooling = (today - day).days < SECRET_COOLDOWN_DAYS
         for hole in _holes(entry):
+            if hole.get("start"):
+                pairs.setdefault(hole["secret"], set()).add(hole["start"])
             if cooling:
                 secrets.add(hole["secret"])
         if entry.get("sentence"):

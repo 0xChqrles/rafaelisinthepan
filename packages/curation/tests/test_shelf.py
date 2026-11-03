@@ -108,9 +108,26 @@ def test_archive_cools_secrets_down_but_blacklists_pairs_for_good(tmp_path, monk
     arch = shelf.archive("fr", date(2026, 9, 8))
     assert arch["secrets"] == {"argent"}                        # cimetière is past its 90-day cooldown
     assert arch["pairs"] == {"cimetiere": {"tombeau"}, "argent": {"monnaie", "billets"}}   # pairs never expire — a corrected day's earlier start was played too
-    assert shelf.sentence_key("y corrected") in arch["sentences"] and shelf.sentence_key("y") not in arch["sentences"]
+    assert {shelf.sentence_key("y corrected"), shelf.sentence_key("y")} <= arch["sentences"]
     assert arch["last_used"][shelf.slug("Machado")] == date(2026, 9, 1)
     assert "money" not in arch["secrets"]                       # another language's day is not this archive
+
+
+def test_a_corrected_day_s_earlier_version_stays_used_whole(tmp_path, monkeypatch):
+    # User-decided 2026-10-23: 2026-10-22 en stood eleven hours before its correction, and its
+    # book came back as a candidate the next day while only the last line counted.
+    _ledger(monkeypatch, tmp_path, [
+        {"day": "2026-10-22", "lang": "en", "sentence": "lead is precipitated", "source": {"author": "Ambrose Bierce",
+         "work": "The Devil's Dictionary"}, "holes": [{"secret": "lead", "word": "lead", "start": "sulfide", "startRank": 161}]},
+        {"day": "2026-10-22", "lang": "en", "sentence": "a man is a belly", "source": {"author": "George Orwell",
+         "work": "Down and Out in Paris and London"}, "holes": [{"secret": "belly", "word": "belly", "start": "winter",
+                                                                  "startRank": 170}]},
+    ])
+    arch = shelf.archive("en", date(2026, 10, 23))
+    assert shelf.in_archive({"author": "Ambrose Bierce", "title": "The Devil's Dictionary"}, arch["works"])
+    assert shelf.in_archive({"author": "George Orwell", "title": "Down and Out in Paris and London"}, arch["works"])
+    assert arch["secrets"] == {"lead", "belly"}
+    assert shelf.sentence_key("lead is precipitated") in arch["sentences"]
 
 
 def test_a_secret_comes_back_ninety_days_after_its_game_day(tmp_path, monkeypatch):

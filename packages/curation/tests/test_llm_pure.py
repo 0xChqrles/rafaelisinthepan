@@ -340,12 +340,13 @@ def test_the_companion_question_shows_the_main_word_its_kind_the_bands_and_what_
     assert "one of a wide kind: bred animals › creatures people keep › the ranks" in prompt
     assert "measured: most readers would split" in prompt
     assert "- « naturelles »: culturelles (150), innées (170)" in prompt
-    assert "- « vie »: the words right around it write it in" in prompt
+    assert "Told back so far — never choose a refused word again; mind what held against the three, and the " \
+           "notes:\n- « vie »: the words right around it write it in" in prompt
     assert "*The three words*" in prompt and "*Holes and punch* of kind 2" in prompt
     none = _Capture()
     llm.choose_companions(none, "s", {**_A_READ, "kind": None, "wide": False}, "n", _POOL, [], lang="fr")
     assert "Its kind: none of the seven." in none.prompts[0] and "*Lines that fit no kind*" in none.prompts[0]
-    assert "Refused so far" not in none.prompts[0] and "one of a wide kind:" not in none.prompts[0]
+    assert "Told back so far" not in none.prompts[0] and "one of a wide kind:" not in none.prompts[0]
 
 
 class _Capture:
@@ -398,9 +399,11 @@ QUESTIONS = {
 def test_every_question_takes_the_language():
     asked = {name for name, f in vars(llm).items()
              if inspect.isfunction(f) and list(inspect.signature(f).parameters)[:1] == ["claude"]}
-    assert asked == set(QUESTIONS)          # a new question joins the list below
-    for name in asked:
-        assert inspect.signature(getattr(llm, name)).parameters["lang"].kind is inspect.Parameter.KEYWORD_ONLY
+    # the difficulty read asks the question `difficulty_prompt` wrote, keyed by its hash: the
+    # language reaches it there, and its wording is the calibrated one (`test_difficulty`)
+    assert asked - {"hole_difficulty"} == set(QUESTIONS)          # a new question joins the list below
+    for f in [*(getattr(llm, name) for name in asked - {"hole_difficulty"}), llm.difficulty_prompt]:
+        assert inspect.signature(f).parameters["lang"].kind is inspect.Parameter.KEYWORD_ONLY
 
 
 @pytest.mark.parametrize("name", list(QUESTIONS))
