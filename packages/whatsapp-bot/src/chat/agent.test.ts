@@ -557,6 +557,21 @@ describe('the web, on an answer the bot was asked for (v22)', () => {
     expect(ambient.requests[0].system).toMatch(/Never say you cannot do something on the first list/);
   });
 
+  it('says it is working once it reaches for a tool, and never on a NO_REPLY', async () => {
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 't’as vu pour riemann ?');
+    let working = 0;
+    const searched = scripted([
+      () => ({ toolCalls: [{ id: 'w1', name: 'web_search', arguments: '{"query":"riemann"}' }], finish: 'tool_calls' }),
+      () => ({ text: 'Vu.' }),
+    ]);
+    await withWeb(searched.provider, dayLog)(message('t’as vu pour riemann ?', { mentions: [] }), group, identity, TODAY, { ...asked('ambient'), onWorking: () => { working += 1; } });
+    expect(working).toBe(1);
+    const quiet = scripted([() => ({ text: 'NO_REPLY' })]);
+    await withWeb(quiet.provider, dayLog)(message('ok', { mentions: [] }), group, identity, TODAY, { ...asked('ambient'), onWorking: () => { working += 1; } });
+    expect(working).toBe(1);
+  });
+
   it('answers a tool that throws as a failed tool, and the answer goes on', async () => {
     const broken = { search: async () => { throw new Error('boom: grève SNCF'); }, read: async () => { throw new Error('boom'); } };
     const { provider, requests } = scripted([

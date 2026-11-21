@@ -1009,6 +1009,14 @@ message) and its own nightly DIARY of the group as notes, never as rules. It liv
   - **IT SEARCHES UNASKED** (`WEB_RULES`, v25, user-decided 2026-11-21: "did you see about
     riemann?" is enough, "even if we lose money"): anything it might not know, news, a
     name, an event, it looks up first, and never answers "rien vu passer".
+  - **IT RESEARCHES, IT DOES NOT GLANCE** (`WEB_RULES`, v26, user-decided 2026-11-21): a
+    result is a summary, not a source — on anything factual it reads the two or three best
+    pages at once, compares, searches again when they disagree or are thin, and ties a
+    namesake to the person before naming them (answering off summaries, it named a
+    Luc Lanier from Brive as "the only one" and denied the place the group had named).
+  - **ANYBODY IS FAIR GAME** (user-decided 2026-11-21: "allow him to research anything and
+    roast, it's fine"): asked to dig on a person, it searches them with what the group
+    knows of them and uses what it finds in its roasts.
   - **TODAY'S SENTENCE NEVER REACHES THE MODEL** (`puzzle/spoilers.ts`). With the web, the
     day's line is one search away for the bot itself (the visible words pasted, the
     lyrics asked for), and a model cannot hold back what it never saw. The day's puzzles —
@@ -1064,7 +1072,8 @@ message) and its own nightly DIARY of the group as notes, never as rules. It liv
     sentence, never inside a link.
   - **"… IS TYPING"** while an addressed message is answered (`whatsapp/client.ts`
     `typing`, refreshed every 8s, capped at 3 min): an answer that searches takes tens of
-    seconds. Never for ambient talk.
+    seconds. Ambient talk shows it from its first tool round (`AnswerOptions.onWorking`,
+    v26), never on a NO_REPLY that reached for nothing.
   - **THE PERSONALITY (v22)**: the character stays; the laziness and "the game bores you"
     — which had become brush-offs — go: keeping the scoreboard is one of its jobs, not what
     it is, and not what it talks about unless the group does. Its vanity is now TRUE: the
