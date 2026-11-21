@@ -76,7 +76,7 @@ const DEFINITIONS: LlmTool[] = [
     description:
       'Search the web. Use it for anything recent, local, specific or checkable — news, results, schedules, prices, what is on, a claim to check — instead of answering from memory. ' +
       'One query of at most 128 characters, in the language most likely to find good pages; it supports "exact phrase", site:example.com, -word, lang:fr, after:2026-01-01 and before:2026-12-31. ' +
-      'Returns up to 6 results with title, url, site, date and summary. Never to find the text of today\'s Whippin sentence.',
+      'Returns up to 6 results with title, url, site, date, summary and the first part of the page itself (content). Use read_page for the rest of a page. Never to find the text of today\'s Whippin sentence.',
     parameters: {
       type: 'object',
       properties: { query: { type: 'string', description: 'What to search for.' } },
@@ -189,7 +189,7 @@ export function createWebTools(deps: WebToolDeps): WebTools {
     const open = found.filter((r) => !blocked(r.url));
     // Every field the model is shown, the link decoded: a quotes or lyrics site spells the
     // line in its path (`/je-marche-seul-dans-la-nuit`).
-    const kept = open.filter((r) => !givesAway(`${r.title}\n${decoded(r.url)}\n${r.site ?? ''}\n${r.summary}`, days));
+    const kept = open.filter((r) => !givesAway(`${r.title}\n${decoded(r.url)}\n${r.site ?? ''}\n${r.summary}\n${r.content}`, days));
     for (const r of kept) note(r.url);
     log('web.search', { results: kept.length, withheld: open.length - kept.length, latencyMs: Date.now() - started });
     return { results: kept };
