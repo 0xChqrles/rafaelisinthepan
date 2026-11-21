@@ -405,8 +405,15 @@ async function main(): Promise<void> {
         ...(message.quoted ? { quoted: { ...message.quoted, text: withoutShares(message.quoted.text, env.siteOrigin) } } : {}),
       };
       // "… is typing" while an ADDRESSED message is answered (v22): a search takes tens of
-      // seconds. Never for ambient talk, which is left alone far more often than answered.
-      const stopTyping = address && client ? client.typing(group.id) : () => {};
+      // seconds. Ambient talk, which is left alone far more often than answered, shows it
+      // from the moment the answer reaches for a tool (v26): by then the bot is on it.
+      let stopTyping = address && client ? client.typing(group.id) : () => {};
+      let typing = Boolean(address && client);
+      const onWorking = () => {
+        if (typing || !client) return;
+        typing = true;
+        stopTyping = client.typing(group.id);
+      };
       let outcome;
       try {
         outcome = await ask(asked, group, bot, today, {
@@ -416,6 +423,7 @@ async function main(): Promise<void> {
           // has put it (`AnswerOptions.said`): queued behind another answer, it is not the
           // last turn of the day by the time it is answered.
           said: { id: message.id, name: displayName(group, message.sender, message.senderName), text: kept ?? '' },
+          onWorking,
         });
       } finally {
         stopTyping();
