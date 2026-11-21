@@ -378,10 +378,10 @@ describe('the conversation agent (#236, #277)', () => {
     await said(dayLog, 'x');
     const down = scripted([() => new LlmUnavailable('503')]);
     expect(await agentWith(down.provider, { dayLog })(message('x'), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'unavailable' });
-    const loop = scripted(Array.from({ length: 10 }, () => () => ({ toolCalls: [{ id: 'c', name: 'get_today_podium', arguments: '{}' }], finish: 'tool_calls' as const })));
+    const loop = scripted(Array.from({ length: 14 }, () => () => ({ toolCalls: [{ id: 'c', name: 'get_today_podium', arguments: '{}' }], finish: 'tool_calls' as const })));
     expect(await agentWith(loop.provider, { dayLog })(message('x'), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'empty' });
-    expect(loop.requests).toHaveLength(9);
-    expect(loop.requests[8].tools).toBeUndefined();
+    expect(loop.requests).toHaveLength(13);
+    expect(loop.requests[12].tools).toBeUndefined();
     const ceiling = scripted([() => ({ text: 'hi' })]);
     expect(await agentWith(ceiling.provider, { dayLog, dailyCallCeiling: 0 })(message('x'), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'call_ceiling' });
   });
@@ -546,21 +546,15 @@ describe('the web, on an answer the bot was asked for (v22)', () => {
     expect(await withWeb(provider, dayLog)(message('cherche la phrase'), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'spoiler' });
   });
 
-  it('offers no web to ambient talk, and says nothing of it there — save to the owner', async () => {
+  it('offers the web on every message, ambient talk included, and says so', async () => {
     const dayLog = new DayLog(memoryDayLogStore());
-    await said(dayLog, 'il pleut demain ?');
+    await said(dayLog, 'cherche sur le web');
     const ambient = scripted([() => ({ text: 'NO_REPLY' })]);
-    await withWeb(ambient.provider, dayLog)(message('il pleut demain ?', { mentions: [] }), group, identity, TODAY, asked('ambient'));
-    expect(ambient.requests[0].tools?.map((t) => t.name)).not.toContain('web_search');
-    expect(ambient.requests[0].system).not.toContain(WEB_RULES);
-    expect(ambient.requests[0].system).not.toMatch(/search the web/);
-    const owned = parseGroupConfig('g.json', {
-      id: GROUP, name: 'g', language: 'fr', enabled: true, timezone: 'Europe/Paris', podium: { enabled: true, time: '22:00' },
-      owner: '33612345678@s.whatsapp.net', chat: { enabled: true, prePrompt: '', perGroupPerDay: 10 },
-    });
-    const boss = scripted([() => ({ text: 'NO_REPLY' })]);
-    await withWeb(boss.provider, dayLog)(message('il pleut demain ?', { mentions: [] }), owned, identity, TODAY, asked('ambient'));
-    expect(boss.requests[0].tools?.map((t) => t.name)).toContain('web_search');
+    await withWeb(ambient.provider, dayLog)(message('cherche sur le web', { mentions: [] }), group, identity, TODAY, asked('ambient'));
+    expect(ambient.requests[0].tools?.map((t) => t.name)).toEqual(expect.arrayContaining(['web_search', 'read_page']));
+    expect(ambient.requests[0].system).toContain(WEB_RULES);
+    expect(ambient.requests[0].system).toMatch(/search the web/);
+    expect(ambient.requests[0].system).toMatch(/Never say you cannot do something on the first list/);
   });
 
   it('answers a tool that throws as a failed tool, and the answer goes on', async () => {

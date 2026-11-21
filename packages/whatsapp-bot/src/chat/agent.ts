@@ -51,7 +51,8 @@ import { currentExchange, nothingToAnswer, quotesBot, type Approach, type BotIde
 // search, a page, sometimes a second search, then the answer — where a game question was
 // one round of tools. The last round never offers tools, so the model answers with what it
 // holds.
-const MAX_TOOL_ROUNDS = 8;
+// 12 since v25: nothing the group asks should run out of rounds.
+const MAX_TOOL_ROUNDS = 12;
 // GENEROUS, BECAUSE THE BUDGET IS SHARED WITH THINKING (the share line's finding, and it
 // bit here too): `deepseek-v4-flash` spends its reasoning from `max_tokens` and the
 // provider reads only `message.content`. At 300 the logs of 2026-09-04 show calls that
@@ -99,8 +100,8 @@ export interface AgentDeps {
   siteOrigin: string;
   // The game's backend (https://api.whippin.ai): with the site, the hosts the web never reads.
   apiBaseUrl?: string;
-  // THE WEB (v22): the provider's search and page reader, offered on an answer the bot was
-  // asked for (`useWeb` below), and bounded per day across every group.
+  // THE WEB (v22): the provider's search and page reader, offered on every answer (v25),
+  // and bounded per day across every group.
   web?: WebClient;
   webDailyCeiling?: number;
   // WHERE TODAY'S SENTENCE IS FROM, as ambient context rather than a tool (#236,
@@ -304,17 +305,16 @@ export function createAgent(deps: AgentDeps) {
     const wrote = recent.filter((t) => t.kind !== 'said').length;
     const owner = fromOwner(group, message);
 
-    // THE WEB, ON AN ANSWER THE BOT WAS ASKED FOR (v22): an addressed message, or its owner's.
-    // Ambient chatter is answered NO_REPLY far more often than not, and a search made before
-    // deciding to stay quiet is spend for nothing — the group asked for a bot that talks less
-    // unasked, not more (the exchange budget's reason).
+    // THE WEB ON EVERY ANSWER (v25, user-decided 2026-11-21: "if he can do something, he can
+    // always do it"). Ambient talk had the game tools only, so a plain "cherche sur le web"
+    // was answered "j'ai pas de navigateur"; cost is not what the group minds.
     // The links the conversation holds, uncut: the day log keeps 500 characters of a turn, and
     // the link a member just posted may sit past them.
     const messageLinks = [...new Set([...urlsIn(message.text), ...(message.quoted ? urlsIn(message.quoted.text) : [])])];
     const conversationLinks = [...messageLinks, ...turns.flatMap((t) => urlsIn(t.text))];
     const blockedHosts = [hostOf(deps.siteOrigin), hostOf(deps.apiBaseUrl)].filter((h): h is string => h !== null);
     const web =
-      deps.web && (!ambient || owner)
+      deps.web
         ? createWebTools({
             client: deps.web,
             // Every language's puzzle of the day, read one after the other (the backend's

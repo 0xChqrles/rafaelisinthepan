@@ -74,8 +74,8 @@ export function botRegion(env: NodeJS.ProcessEnv = process.env): string {
   return env.BOT_AWS_REGION?.trim() || DEFAULT_REGION;
 }
 
-export const DEFAULT_DAILY_CALL_CEILING = 500;
-export const DEFAULT_WEB_DAILY_CEILING = 300;
+export const DEFAULT_DAILY_CALL_CEILING = 5000;
+export const DEFAULT_WEB_DAILY_CEILING = 3000;
 
 // An EMPTY value is unset, as it is for every other knob here — `Number('')` is 0, which
 // passes the check below and silences every model reply while the per-group quotas keep

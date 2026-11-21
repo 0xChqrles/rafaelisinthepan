@@ -32,8 +32,8 @@ import { WebUnavailable, type LlmTool, type WebClient } from '../llm/types';
 import { revealsSentence, type DaySecrets } from '../puzzle/spoilers';
 import { linkKey, urlsIn } from './format';
 
-export const MAX_SEARCHES = 5;
-export const MAX_READS = 4;
+export const MAX_SEARCHES = 8;
+export const MAX_READS = 6;
 
 // One published puzzle of today, as the guard holds it.
 export interface DayGuard {
