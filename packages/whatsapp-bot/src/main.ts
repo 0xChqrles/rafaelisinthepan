@@ -62,6 +62,9 @@ import { connectWhatsApp } from './whatsapp/client';
 import { acquireLease, keepLease, type LeaseKeeper } from './whatsapp/lease';
 import { startConnectedMetric } from './whatsapp/metrics';
 
+// How long an ambient answer may think before the group sees "… is typing" (v27).
+const AMBIENT_TYPING_AFTER_MS = 2_500;
+
 const IDLE_RECHECK_MS = 60_000;
 
 async function idleUntilOperator(check: () => Promise<boolean>, log: ReturnType<typeof createLog>) {
@@ -406,7 +409,9 @@ async function main(): Promise<void> {
       };
       // "… is typing" while an ADDRESSED message is answered (v22): a search takes tens of
       // seconds. Ambient talk, which is left alone far more often than answered, shows it
-      // from the moment the answer reaches for a tool (v26): by then the bot is on it.
+      // from the moment the answer reaches for a tool (v26), or once it has taken
+      // `AMBIENT_TYPING_AFTER_MS` (v27, user-decided 2026-11-21: "make sure it types when he
+      // takes time") — a quick NO_REPLY shows nothing, a slow one shows the dots briefly.
       let stopTyping = address && client ? client.typing(group.id) : () => {};
       let typing = Boolean(address && client);
       const onWorking = () => {
@@ -414,6 +419,7 @@ async function main(): Promise<void> {
         typing = true;
         stopTyping = client.typing(group.id);
       };
+      const slow = typing ? null : setTimeout(onWorking, AMBIENT_TYPING_AFTER_MS);
       let outcome;
       try {
         outcome = await ask(asked, group, bot, today, {
@@ -426,6 +432,7 @@ async function main(): Promise<void> {
           onWorking,
         });
       } finally {
+        if (slow) clearTimeout(slow);
         stopTyping();
       }
       if (outcome.kind === 'silent') {

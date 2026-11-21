@@ -77,6 +77,9 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
   const sentMessages = new Map<string, WAMessage['message']>();
 
   let sock: WASocket | null = null;
+
+  // How many answers are being typed right now, across groups (`typing`).
+  let typingNow = 0;
   let open = false;
   let stopped = false;
   let attempt = 0;
@@ -300,10 +303,15 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
       return id;
     },
     typing(jid) {
-      const socket = sock;
-      if (!socket || !open) return () => {};
+      if (!sock || !open) return () => {};
+      const socket: WASocket = sock;
       // A presence that does not land costs the dots, never the answer.
       const tell = (state: 'composing' | 'paused') => void socket.sendPresenceUpdate(state, jid).catch(() => {});
+      // ONLINE WHILE IT TYPES (2026-11-21): the socket connects as unavailable
+      // (`markOnlineOnConnect: false`, so the account's phone keeps its notifications), and
+      // WhatsApp does not show the chat state of a client that is not online. It goes back
+      // offline once no answer is being typed in any group.
+      if (typingNow++ === 0) void socket.sendPresenceUpdate('available').catch(() => {});
       tell('composing');
       const pulse = setInterval(() => tell('composing'), TYPING_PULSE_MS);
       const cap = setTimeout(stop, TYPING_MAX_MS);
@@ -314,6 +322,7 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
         clearInterval(pulse);
         clearTimeout(cap);
         tell('paused');
+        if (--typingNow === 0) void socket.sendPresenceUpdate('unavailable').catch(() => {});
       }
       return stop;
     },

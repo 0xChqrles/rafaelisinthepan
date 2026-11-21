@@ -1078,7 +1078,11 @@ message) and its own nightly DIARY of the group as notes, never as rules. It liv
   - **"… IS TYPING"** while an addressed message is answered (`whatsapp/client.ts`
     `typing`, refreshed every 8s, capped at 3 min): an answer that searches takes tens of
     seconds. Ambient talk shows it from its first tool round (`AnswerOptions.onWorking`,
-    v26), never on a NO_REPLY that reached for nothing.
+    v26) or once the answer has taken `AMBIENT_TYPING_AFTER_MS` (2.5 s, `main.ts`; v27,
+    user-decided 2026-11-21: "make sure it types when he takes time"), so a quick NO_REPLY
+    shows nothing. **The account goes ONLINE while it types** (`typing` sends `available`
+    first and `unavailable` once no group is being typed in): it connects unavailable
+    (`markOnlineOnConnect: false`), and WhatsApp shows no chat state from an offline client.
   - **THE PERSONALITY (v22)**: the character stays; the laziness and "the game bores you"
     — which had become brush-offs — go: keeping the scoreboard is one of its jobs, not what
     it is, and not what it talks about unless the group does. Its vanity is now TRUE: the
