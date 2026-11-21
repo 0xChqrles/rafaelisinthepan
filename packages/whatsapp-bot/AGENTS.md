@@ -9,8 +9,8 @@ WhatsApp account that records valid `…/s/<token>` shares (a signed share's tra
 `/<publicId>` is a claim the Whippin group's rounds verify, and is stripped with the link) as they arrive in configured
 groups, posts each group's daily podium, acknowledges each share, reads the whole day and
 answers when addressed — or, within a budget, when it has something to add — using the
-group's Whippin history as TOOLS, the WEB (search and page reading, when it was asked for
-something) and its own nightly DIARY of the group as notes, never as rules. It lives inside the monorepo and outside the game runtime: it imports
+group's Whippin history as TOOLS, the WEB (search and page reading, on every
+message) and its own nightly DIARY of the group as notes, never as rules. It lives inside the monorepo and outside the game runtime: it imports
 `@whippin/shared`; nothing in the game imports it.
 
 ## File map
@@ -478,8 +478,9 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
     his own question, tagged the bot, and got nothing.
   - **Ceilings: `chat.perGroupPerDay`** (written answers per group per UTC day, charged up
     front for an addressed message, after the answer for an ambient one) **and
-    `BOT_LLM_DAILY_CALL_CEILING`** (every call — with one call per message it is the real
-    cost control). **`chat.perUserPerDay` is REMOVED and REFUSED by the parser**: reached, it
+    `BOT_LLM_DAILY_CALL_CEILING`** (5000; every call). Since v25 both daily ceilings are
+    set far above use (about 80 calls a day) and guard only a runaway loop: the group is
+    never meant to feel them (user-decided 2026-11-21). **`chat.perUserPerDay` is REMOVED and REFUSED by the parser**: reached, it
     silenced a person for the rest of the day with nothing saying why (the third cause found
     behind "the bot misses messages", 2026-09-04), and set high enough not to, it bounded
     nothing. Existing SSM configs carrying it must be pushed without it before the deploy
@@ -995,10 +996,19 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
   searched or read. **The page is downloaded by DeepSeek, never by this task**, so no URL
   ever makes the Fargate task open a connection (its network holds the ECS credentials
   endpoint). What the code decides:
-  - **OFFERED ON AN ANSWER THE BOT WAS ASKED FOR**: an addressed message, or the owner's.
-    Ambient talk keeps the game tools only and is told nothing of the web — it is NO_REPLY
-    far more often than not, and the group asked for a bot that talks LESS unasked (the
-    exchange budget's reason); freedom is what it answers and how well, not how often.
+  - **OFFERED ON EVERY ANSWER, AMBIENT TALK INCLUDED** (v25, user-decided 2026-11-21: "we
+    don't care about the cost… if he can do something, he can always do it"): a plain
+    "cherche sur le web" not addressed to the bot was answered "j'ai pas de navigateur"
+    when ambient talk had the game tools only. Whether it SPEAKS unasked is still the
+    exchange budget's call; what it can do never depends on how it was approached.
+  - **IT IS TOLD WHAT IT CAN AND CANNOT DO** (`personality.ts` `capabilities`): the game
+    tools, the web, reactions; and that it cannot see photos, videos, stickers or voice
+    notes (captions only), send anything but text and reactions, write privately, come back
+    on its own, or change the game. It never denies the first list nor fakes the second.
+    The list is the code's: a new tool or a new kind of message changes it.
+  - **IT SEARCHES UNASKED** (`WEB_RULES`, v25, user-decided 2026-11-21: "did you see about
+    riemann?" is enough, "even if we lose money"): anything it might not know, news, a
+    name, an event, it looks up first, and never answers "rien vu passer".
   - **TODAY'S SENTENCE NEVER REACHES THE MODEL** (`puzzle/spoilers.ts`). With the web, the
     day's line is one search away for the bot itself (the visible words pasted, the
     lyrics asked for), and a model cannot hold back what it never saw. The day's puzzles —
@@ -1033,12 +1043,12 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
     without the query string): from a result, a page, the conversation, or the game's own
     site; a made-up one is taken out of the reply, and only the line it left is tidied.
     A link in a reply still gets NO preview card (the preview bullet above).
-  - **BOUNDED**: `MAX_SEARCHES` 5 and `MAX_READS` 4 per answer (counted before anything is
-    awaited, since a round's calls run together), and `BOT_WEB_DAILY_CEILING` (300) across
+  - **BOUNDED**: `MAX_SEARCHES` 8 and `MAX_READS` 6 per answer (counted before anything is
+    awaited, since a round's calls run together), and `BOT_WEB_DAILY_CEILING` (3000) across
     every group — its own counter (`limits.ts` `takeDailyWeb`), so a spent web budget is
     told to the model and the bot answers without it, never silence. A failed search or
     read is a fact the tool answers; nothing throws past it.
-  - **THE TOOL LOOP GREW FOR IT** (`agent.ts`): `MAX_TOOL_ROUNDS` 8 (search, read, search
+  - **THE TOOL LOOP GREW FOR IT** (`agent.ts`): `MAX_TOOL_ROUNDS` 12 (search, read, search
     again, answer), a round's calls run together, a tool that throws answers as a failed
     tool, and the answer has a clock — `ANSWER_BUDGET_MS` 150s, each call at most 60s of
     it, and the round that starts with under 45s left offers no tools. The thinking-mode
