@@ -1006,6 +1006,9 @@ message) and its own nightly DIARY of the group as notes, never as rules. It liv
     notes (captions only), send anything but text and reactions, write privately, come back
     on its own, or change the game. It never denies the first list nor fakes the second.
     The list is the code's: a new tool or a new kind of message changes it.
+  - **IT SEARCHES UNASKED** (`WEB_RULES`, v25, user-decided 2026-11-21: "did you see about
+    riemann?" is enough, "even if we lose money"): anything it might not know, news, a
+    name, an event, it looks up first, and never answers "rien vu passer".
   - **TODAY'S SENTENCE NEVER REACHES THE MODEL** (`puzzle/spoilers.ts`). With the web, the
     day's line is one search away for the bot itself (the visible words pasted, the
     lyrics asked for), and a model cannot hold back what it never saw. The day's puzzles —
