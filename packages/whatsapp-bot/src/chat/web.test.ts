@@ -9,7 +9,7 @@ const fr: DayGuard = {
 };
 const en: DayGuard = { secrets: null }; // unpublished
 
-const result = (url: string, summary = 'rien à voir'): WebResult => ({ title: 't', url, site: null, date: null, summary });
+const result = (url: string, summary = 'rien à voir', content = ''): WebResult => ({ title: 't', url, site: null, date: null, summary, content });
 
 function client(results: WebResult[] = [], pages: Record<string, WebPage | Error> = {}) {
   const calls = { search: [] as string[], read: [] as string[] };
@@ -56,12 +56,14 @@ describe('the web, as the conversation\'s tools (v22)', () => {
 
   it("WITHHOLDS a result or a page that holds today's sentence, before the model reads it", async () => {
     const lyrics = result('https://paroles.ex/belin', 'Je marche seul dans la nuit, refrain…');
-    const { web } = client([lyrics, result('https://ex.com/a')], { 'https://ex.com/a': { title: 'A', content: 'et je marche seul dans la rue', truncated: false } });
+    const inPage = result('https://paroles.ex/page', 'Paroles', 'Couplet 1. Je marche seul dans la nuit');
+    const { web } = client([lyrics, inPage, result('https://ex.com/a')], { 'https://ex.com/a': { title: 'A', content: 'et je marche seul dans la rue', truncated: false } });
     const t = tools(web);
     // NEVER SAYING WHY: a withheld result is simply not there, a withheld page reads like an
     // empty one — a guard that named the day would confirm a member's guess.
     expect(await t.run('web_search', { query: 'paroles marche dans la nuit' })).toEqual({ results: [result('https://ex.com/a')] });
     expect(t.saw(lyrics.url)).toBe(false);
+    expect(t.saw(inPage.url)).toBe(false); // the page text a result brings is checked too (v27)
     expect(await t.run('read_page', { url: 'https://ex.com/a' })).toEqual({ error: 'that page has nothing readable' });
   });
 

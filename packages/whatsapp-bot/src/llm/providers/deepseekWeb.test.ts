@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { WebUnavailable } from '../types';
-import { PAGE_MAX_CHARS, SUMMARY_MAX_CHARS, cleanPage, deepSeekWeb, resultDate } from './deepseekWeb';
+import { PAGE_MAX_CHARS, SUMMARY_MAX_CHARS, RESULT_CONTENT_MAX_CHARS, cleanPage, deepSeekWeb, resultDate } from './deepseekWeb';
 
 function fetchReturning(status: number, body: unknown) {
   return vi.fn(async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
@@ -14,7 +14,7 @@ describe("DeepSeek's Search and Fetch APIs (v22)", () => {
   it('searches on the key, bounded, and maps the results', async () => {
     const f = fetchReturning(200, {
       results: [
-        { title: ' T ', url: 'https://ex.com/a', site_name: 'Ex', date: '2026-10-16T16:00:00+00:00', summary: 'x'.repeat(4000), snippet: 's' },
+        { title: ' T ', url: 'https://ex.com/a', site_name: 'Ex', date: '2026-10-16T16:00:00+00:00', summary: 'x'.repeat(4000), snippet: 's', content: `Page\\. ${'y'.repeat(9000)}` },
         { title: 'no link', url: 'javascript:alert(1)' },
         { title: 'snippet only', url: 'https://ex.com/b', snippet: 'court', date: null },
       ],
@@ -24,12 +24,14 @@ describe("DeepSeek's Search and Fetch APIs (v22)", () => {
     expect(url).toBe('https://api.deepseek.com/v1/tools/search');
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer k');
     expect(Array.from(body.query as string)).toHaveLength(128);
-    expect(body).toMatchObject({ count: 6, need_content: false });
+    expect(body).toMatchObject({ count: 6, need_content: true });
     expect(body.ori_question).toBeUndefined(); // the member's own words never go
     expect(found).toHaveLength(2);
     expect(found[0]).toMatchObject({ title: 'T', url: 'https://ex.com/a', site: 'Ex', date: '2026-10-17' });
     expect(found[0].summary.length).toBeLessThanOrEqual(SUMMARY_MAX_CHARS);
-    expect(found[1]).toEqual({ title: 'snippet only', url: 'https://ex.com/b', site: null, date: null, summary: 'court' });
+    expect(found[0].content.startsWith('Page. y')).toBe(true);
+    expect(found[0].content.length).toBeLessThanOrEqual(RESULT_CONTENT_MAX_CHARS);
+    expect(found[1]).toEqual({ title: 'snippet only', url: 'https://ex.com/b', site: null, date: null, summary: 'court', content: '' });
   });
 
   it('reads a page as clean, bounded text', async () => {

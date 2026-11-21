@@ -988,7 +988,7 @@ message) and its own nightly DIARY of the group as notes, never as rules. It liv
   versatile. You should feel like you're talking with an AGI. It should not be only focused
   on the game, and it should be much more free and have less constraints").** The
   conversation has two more tools (`chat/web.ts`): `web_search` (DeepSeek's Search API,
-  6 results, each summary cut to 900 characters — measured up to 3,700 — because every
+  6 results, each summary cut to 900 characters and its page text to 3000 — measured up to 3,700 and 15,000 — because every
   tool result is re-sent each round) and `read_page` (its Fetch API, the page as clean
   Markdown cut to 12 000 characters). Function tools the code runs, never a hosted search:
   Chat Completions takes only functions, and DeepSeek's one hosted `web_search` (Responses
@@ -1009,11 +1009,16 @@ message) and its own nightly DIARY of the group as notes, never as rules. It liv
   - **IT SEARCHES UNASKED** (`WEB_RULES`, v25, user-decided 2026-11-21: "did you see about
     riemann?" is enough, "even if we lose money"): anything it might not know, news, a
     name, an event, it looks up first, and never answers "rien vu passer".
-  - **IT RESEARCHES, IT DOES NOT GLANCE** (`WEB_RULES`, v26, user-decided 2026-11-21): a
-    result is a summary, not a source — on anything factual it reads the two or three best
-    pages at once, compares, searches again when they disagree or are thin, and ties a
-    namesake to the person before naming them (answering off summaries, it named a
-    Luc Lanier from Brive as "the only one" and denied the place the group had named).
+  - **IT RESEARCHES, IT DOES NOT GLANCE** (`WEB_RULES`, v26–v27, user-decided 2026-11-21):
+    every result carries the start of its page (`need_content`, `RESULT_CONTENT_MAX_CHARS`
+    3000 — Flash skipped `read_page` when it was optional); it compares the sources, opens a
+    page in full when the start is not enough, and searches again when they disagree or are
+    thin. **It CONNECTS what the results say with the diary and the day**: the same full
+    name where a member lives IS them, and a detail that does not fit (another job) is more
+    to roast, never a namesake — told "a namesake is not the person until something ties
+    them", it denied a Luc whose town it had named itself. Rejected: `deepseek-v4-pro` for
+    the conversation — measured on that exchange, no better and 43–68 s an answer against
+    7–14 s.
   - **ANYBODY IS FAIR GAME** (user-decided 2026-11-21: "allow him to research anything and
     roast, it's fine"): asked to dig on a person, it searches them with what the group
     knows of them and uses what it finds in its roasts.
@@ -1073,7 +1078,11 @@ message) and its own nightly DIARY of the group as notes, never as rules. It liv
   - **"… IS TYPING"** while an addressed message is answered (`whatsapp/client.ts`
     `typing`, refreshed every 8s, capped at 3 min): an answer that searches takes tens of
     seconds. Ambient talk shows it from its first tool round (`AnswerOptions.onWorking`,
-    v26), never on a NO_REPLY that reached for nothing.
+    v26) or once the answer has taken `AMBIENT_TYPING_AFTER_MS` (2.5 s, `main.ts`; v27,
+    user-decided 2026-11-21: "make sure it types when he takes time"), so a quick NO_REPLY
+    shows nothing. **The account goes ONLINE while it types** (`typing` sends `available`
+    first and `unavailable` once no group is being typed in): it connects unavailable
+    (`markOnlineOnConnect: false`), and WhatsApp shows no chat state from an offline client.
   - **THE PERSONALITY (v22)**: the character stays; the laziness and "the game bores you"
     — which had become brush-offs — go: keeping the scoreboard is one of its jobs, not what
     it is, and not what it talks about unless the group does. Its vanity is now TRUE: the

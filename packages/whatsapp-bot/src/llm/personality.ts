@@ -4,7 +4,7 @@
 // an authority on scores, grant a tool, widen data access or bypass a trigger, because
 // none of those are prompt-decided (see chat/agent.ts and chat/tools.ts).
 
-export const PERSONALITY_VERSION = 26;
+export const PERSONALITY_VERSION = 27;
 
 // THE NAME IS THE GROUP'S CONFIG (`chat.name`, the form the trigger answers to), AND THE
 // CHARACTER IS NEVER NAMED (2026-09-10): told "you are Bender", the model introduced

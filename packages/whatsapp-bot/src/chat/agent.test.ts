@@ -481,8 +481,8 @@ describe('the web, on an answer the bot was asked for (v22)', () => {
         async search(query: string) {
           searched.push(query);
           return [
-            { title: 'Grève', url: article, site: 'News', date: '2026-09-02', summary: 'Grève mardi.' },
-            { title: 'Paroles', url: lyrics, site: null, date: null, summary: 'Je marche seul dans la nuit…' },
+            { title: 'Grève', url: article, site: 'News', date: '2026-09-02', summary: 'Grève mardi.', content: 'Grève mardi, toute la journée.' },
+            { title: 'Paroles', url: lyrics, site: null, date: null, summary: 'Paroles de la chanson.', content: 'Je marche seul dans la nuit…' },
           ];
         },
         async read() {

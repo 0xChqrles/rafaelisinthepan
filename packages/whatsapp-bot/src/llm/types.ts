@@ -69,6 +69,9 @@ export interface WebResult {
   site: string | null;
   date: string | null; // YYYY-MM-DD, when the engine knows it
   summary: string;
+  // The page's own text, cleaned and cut (v27): every search brings its pages with it, so
+  // going deeper never waits on the model choosing to open one.
+  content: string;
 }
 
 export interface WebPage {

@@ -22,6 +22,8 @@ export const SEARCH_COUNT = 6;
 // against 600–800, 2026-10-18), and every tool result is re-sent on every later round of the
 // answer — so each is cut here.
 export const SUMMARY_MAX_CHARS = 900;
+// Each result's page text (v27), cut: six of them ride in every later round of the answer.
+export const RESULT_CONTENT_MAX_CHARS = 3000;
 export const PAGE_MAX_CHARS = 12_000;
 // What is CLEANED at most: the escapes roughly double a page, so twice the kept length still
 // fills it — and nothing past it is run through a regex in the task's one process.
@@ -35,6 +37,7 @@ interface WireResult {
   site_name?: unknown;
   date?: unknown;
   summary?: unknown;
+  content?: unknown;
   snippet?: unknown;
 }
 
@@ -104,7 +107,7 @@ export function deepSeekWeb(options: DeepSeekWebOptions): WebClient {
     async search(query) {
       const q = Array.from(query.trim()).slice(0, QUERY_MAX_CHARS).join('').trim();
       if (q === '') throw new WebUnavailable('refused');
-      const wire = (await post(SEARCH_ENDPOINT, { query: q, count: SEARCH_COUNT, need_content: false }, SEARCH_TIMEOUT_MS)) as {
+      const wire = (await post(SEARCH_ENDPOINT, { query: q, count: SEARCH_COUNT, need_content: true }, SEARCH_TIMEOUT_MS)) as {
         results?: WireResult[];
       } | null;
       const results: WebResult[] = [];
@@ -117,6 +120,7 @@ export function deepSeekWeb(options: DeepSeekWebOptions): WebClient {
           site: text(r.site_name) || null,
           date: resultDate(r.date),
           summary: cut(text(r.summary) || text(r.snippet), SUMMARY_MAX_CHARS),
+          content: cut(cleanPage(text(r.content).slice(0, 2 * RESULT_CONTENT_MAX_CHARS)), RESULT_CONTENT_MAX_CHARS),
         });
       }
       return results;
