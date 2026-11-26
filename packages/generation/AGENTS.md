@@ -141,10 +141,18 @@ Consequences that are load-bearing:
   merges `rouge` noun/adjective, `ex-épouse`/`ex-époux`, and the plural-only
   `tropiques`/`ciseaux` filings into their larger families; `hebdo` is contained by
   `hebdomadaire`. It deliberately does **not** merge real distinctions (`fil`/`fils`,
-  `moi`/`mois`) or masculine/feminine noun derivations (`cafetier`/`cafetière`). On
-  the pinned Morphalou 3.1 source the guarded measurements are 5,712 identical-form
-  sets / 11,472 entries, 1,496 contained entries, 147,868 resulting groups and
-  994,497 artifact rows; `build_rows_fr` hard-fails when any of the five moves.
+  `moi`/`mois`) or masculine/feminine noun derivations (`cafetier`/`cafetière`).
+- **A hyphenated compound filed under both spellings of the 1990 reform is ONE word**
+  (user-decided 2026-11-26: « porte-avion et porte-avions » must be one word): an
+  INVARIABLE entry (`porte-avions`, n:s = n:p) whose one spelling is a form of exactly
+  one other surviving same-POS entry (`porte-avion`, plural `porte-avions`) joins its
+  group, both members kept (`merge_entries` rule 4, `_compound_spellings`). The hyphen
+  is the guard — the same shape without one is a real distinction (`fil`/`fils`,
+  `taxi`/`taxis`) — and an invariable entry two incomparable entries could take joins
+  neither. On the pinned Morphalou 3.1 source the guarded measurements are 5,712
+  identical-form sets / 11,472 entries, 1,496 contained entries, 157 compound
+  spellings, 147,714 resulting groups and 994,497 artifact rows; `build_rows_fr`
+  hard-fails when any of the six moves.
 
 - **The POS gate has two cases**, unchanged in meaning from #119: with Lexique
   frequency for the surface, the row's class (VER **and** AUX merge — an auxiliary is
@@ -618,7 +626,7 @@ output filename contains the three distinct secret slugs in sentence order.
   (`en.lemmas.tsv.gz`, `build_lemmas.py`, `pnpm lemmas:en`) was REMOVED by #317.
 - **fr word-group inventory (#132/#146, Morphalou-sourced, superseding the Lefff
   verb table):** `generation/wordlist/fr.forms.tsv.gz` is committed — 994,497 rows
-  over every POS and 147,868 playable groups (13,716 verb / 98,917 noun / 36,341
+  over every POS and 147,714 playable groups (13,716 verb / 98,917 noun / 36,341
   adjective source lexemes + the closed classes), 51 verb cells, ~5.7 MB gzipped —
   beside `fr.forms.LICENSE`
   (LGPL-LR, extracted from the archive's LISEZ-MOI). Built by `build_forms.py`
