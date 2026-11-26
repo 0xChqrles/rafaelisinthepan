@@ -577,7 +577,15 @@ def merge_entries(lexemes, same_lemma=False):
     converts freely (a walk / to walk, a dream / to dream) and the embedding holds one
     vector for both; splitting them would rank «walk» and «walked» apart and hand the
     judge the same lemma twice. It also joins true homonyms AGID cannot tell apart
-    («bear» the animal and the verb) — the embedding cannot either."""
+    («bear» the animal and the verb) — the embedding cannot either.
+
+    Rule 4 joins a HYPHENATED compound filed twice, once per spelling of the 1990
+    reform: an invariable entry («porte-avions» n:s = n:p = «porte-avions») whose one
+    spelling is a form of exactly one other surviving same-POS entry («porte-avion»,
+    plural «porte-avions») is that word's other singular, so both spellings solve it.
+    The hyphen is the guard: without it the same shape is a real distinction
+    («fils»/«fil», «taxis»/«taxi»). An invariable entry that two incomparable entries
+    could take joins neither (rule 2's no-fusion premise)."""
     rows = {key: entry_rows(cells) for key, cells in lexemes.items()}
     forms = {key: entry_forms(cells) for key, cells in lexemes.items()}
 
@@ -615,16 +623,22 @@ def merge_entries(lexemes, same_lemma=False):
         if key in surviving:
             surviving_by_forms.setdefault(spellings, []).append(key)
 
+    compounds = _compound_spellings(
+        [key for key in lexemes if key in surviving], forms)
+    classes = list(surviving_by_forms.values()) + compounds
     if same_lemma:
-        surviving_by_forms = _join_same_lemma(
-            [key for key in lexemes if key in surviving], surviving_by_forms)
+        by_lemma = {}
+        for key in lexemes:
+            if key in surviving:
+                by_lemma.setdefault(key[0], []).append(key)
+        classes += list(by_lemma.values())
+    joined = _join([key for key in lexemes if key in surviving], classes)
 
     groups = {}
     for key in lexemes:  # pinned source order owns exact-group naming
         if key not in surviving:
             continue
-        members = surviving_by_forms[forms[key]] if not same_lemma \
-            else surviving_by_forms[key]
+        members = joined[key]
         canonical = members[0]
         group = lexeme_key(*canonical)
         if group in groups:
@@ -636,6 +650,7 @@ def merge_entries(lexemes, same_lemma=False):
         "twin_groups": len(twin_sets),
         "twin_entries": sum(len(keys) for keys in twin_sets),
         "contained_entries": len(contained),
+        "compound_spellings": len(compounds),
         "contained_samples": tuple(
             (lexeme_key(*key), tuple(lexeme_key(*target)
                                      for target in contained[key]))
@@ -645,10 +660,33 @@ def merge_entries(lexemes, same_lemma=False):
     }
 
 
-def _join_same_lemma(keys, by_forms):
-    """Rule 3 (English): union-find over the surviving entries, joining rule 1's
-    identical-form twins AND entries that share a lemma. Returns {entry: members}
-    with members in source order, the first naming the group."""
+def _compound_spellings(keys, forms):
+    """Rule 4's pairs: [invariable hyphenated entry, the one same-POS entry whose
+    other forms it completes], over the surviving entries in source order. Entries
+    with identical form sets count once (rule 1 already made them one group)."""
+    owners = {}
+    for key in keys:
+        for form in forms[key]:
+            owners.setdefault((key[1], form), []).append(key)
+    pairs = []
+    for key in keys:
+        if len(forms[key]) != 1:
+            continue
+        (form,) = forms[key]
+        if "-" not in form:
+            continue
+        larger = [other for other in owners[(key[1], form)]
+                  if len(forms[other]) > 1]
+        if len({forms[other] for other in larger}) == 1:
+            pairs.append([larger[0], key])
+    return pairs
+
+
+def _join(keys, classes):
+    """Union-find over the surviving entries: every class (rule 1's identical-form
+    twins, rule 4's compound spellings, English rule 3's shared lemma) is one group,
+    joined transitively. Returns {entry: members} with members in source order, the
+    first naming the group."""
     parent = {key: key for key in keys}
 
     def find(key):
@@ -662,10 +700,7 @@ def _join_same_lemma(keys, by_forms):
         if ra != rb:
             parent[rb] = ra
 
-    by_lemma = {}
-    for key in keys:
-        by_lemma.setdefault(key[0], []).append(key)
-    for members in list(by_lemma.values()) + list(by_forms.values()):
+    for members in classes:
         for other in members[1:]:
             union(members[0], other)
     components = {}
@@ -872,7 +907,8 @@ EXPECTED_MERGE_STATS = {
     "twin_groups": 5_712,
     "twin_entries": 11_472,
     "contained_entries": 1_496,
-    "groups": 147_868,
+    "compound_spellings": 157,
+    "groups": 147_714,
     "rows": 994_497,
 }
 
@@ -1692,6 +1728,9 @@ def build(lang, *, refresh):
           f"entrée(s) redondante(s) retirée(s).", file=sys.stderr)
     for source, targets in stats["contained_samples"]:
         print(f"          p.ex. {source} ⊂ {', '.join(targets)}", file=sys.stderr)
+    print(f"Fusion des composés, deux graphies (porte-avion / porte-avions) : "
+          f"{stats['compound_spellings']:,} entrée(s) invariable(s) jointe(s).",
+          file=sys.stderr)
     print(f"Gardes #146 : {len(EXPECTED_MERGE_STATS)} mesure(s) pinnée(s) "
           "vérifiée(s).", file=sys.stderr)
     print(f"Lignes source inexploitables : {stats['rows_unmappable']:,} ; entrées "

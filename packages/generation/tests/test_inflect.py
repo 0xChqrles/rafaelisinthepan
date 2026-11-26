@@ -233,6 +233,34 @@ def test_a_fully_contained_same_pos_entry_disappears_but_real_distinctions_stay(
     assert stats["contained_entries"] == 1
 
 
+def test_a_hyphenated_compound_filed_under_both_spellings_is_one_word():
+    lexemes = {
+        # The 1990 spelling (singular without s) and the invariable traditional one.
+        ("porte-avion", "nc"): {"n:s": {"porte-avion"}, "n:p": {"porte-avions"}},
+        ("porte-avions", "nc"): {"n:s": {"porte-avions"}, "n:p": {"porte-avions"}},
+        # The same shape without a hyphen is a real distinction.
+        ("fil", "nc"): {"n:s": {"fil"}, "n:p": {"fils"}},
+        ("fils", "nc"): {"n:s": {"fils"}, "n:p": {"fils"}},
+        # An invariable compound two incomparable entries could take joins neither.
+        ("tire-a", "nc"): {"n:s": {"tire-a"}, "n:p": {"tire-sous"}},
+        ("tire-b", "nc"): {"n:s": {"tire-b"}, "n:p": {"tire-sous"}},
+        ("tire-sous", "nc"): {"n:s": {"tire-sous"}, "n:p": {"tire-sous"}},
+    }
+    groups, stats = merge_entries(lexemes)
+
+    assert [(lemma, pos) for lemma, pos, _cells in groups["porte-avion:nc"]] == [
+        ("porte-avion", "nc"), ("porte-avions", "nc")]
+    assert "porte-avions:nc" not in groups
+    assert {"fil:nc", "fils:nc", "tire-a:nc", "tire-b:nc", "tire-sous:nc"} <= set(groups)
+    assert stats["compound_spellings"] == 1
+
+
+def test_the_committed_inventory_solves_both_compound_spellings_alike():
+    table = committed()
+    assert table.grouping["porte-avion"] == table.grouping["porte-avions"]
+    assert table.grouping["fil"] != table.grouping["fils"]
+
+
 def test_a_redundant_entry_shared_by_two_supersets_cannot_fuse_them():
     lexemes = {
         ("alpha", "nc"): {"n:s": {"alpha"}, "n:p": {"communs"}},
@@ -1403,7 +1431,7 @@ def test_the_committed_table_holds_the_146_rows_and_groups():
                 rows += 1
                 groups.add(line.split("\t", 1)[0])
     assert rows == 994_497
-    assert len(groups) == 147_868
+    assert len(groups) == 147_714
 
 
 @pytest.mark.parametrize("group,feature,expected", [
@@ -1472,7 +1500,8 @@ def test_a_fresh_build_reproduces_the_committed_artifact_exactly():
     assert stats["twin_groups"] == 5_712
     assert stats["twin_entries"] == 11_472
     assert stats["contained_entries"] == 1_496
-    assert stats["groups"] == 147_868
+    assert stats["compound_spellings"] == 157
+    assert stats["groups"] == 147_714
     assert len(rows) == 994_497
     expected = [build_forms.row_line(g, l, p, ft, fo, d)
                 for g, l, p, ft, fo, d, _freq in rows]
